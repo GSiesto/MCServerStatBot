@@ -10,6 +10,7 @@ import re
 
 welcome_text = "Hi, this is what you can do:\n_/health _urlexample.com__\n_/trace _urlexample.com_ minutes_"
 
+
 def cmd_start(bot, update):
     bot.send_message(update.message.chat_id, text=welcome_text, parse_mode=telegram.ParseMode.MARKDOWN)
 
@@ -56,7 +57,7 @@ def cmd_track(bot, update, args):
 def error(bot, update, args):
     bot.sendMessage(
         chat_id=update.message.chat_id,
-        text=("👾 _Minecraft Server Status_ 👾\n\n🔻 Offline\n╭\n*Url:* {0}\n*Error Description:*\n{1}\n╰\n").format(
+        text=("👾 _Minecraft Server Status_ 👾\n\n🔻 *Offline*\n╭\n*Url:* {0}\n*Error Description:*\n{1}\n╰\n").format(
             args[0],
             str("_Couldn't connect to the server_")
     ), parse_mode=telegram.ParseMode.MARKDOWN)
