@@ -6,7 +6,7 @@ import logging
 import commands
 import os
 import sys
-from telegram.ext import Updater, CommandHandler
+from telegram.ext import Updater, CommandHandler, CallbackQueryHandler
 
 mode = os.getenv("MODE")
 TOKEN = os.getenv("TOKEN")
@@ -27,6 +27,9 @@ if __name__ == '__main__':
     dispatcher.add_handler(start_handler)
     dispatcher.add_handler(status_handler)
     dispatcher.add_handler(players_handler)
+
+    # Callback Handlers
+    dispatcher.add_handler(CallbackQueryHandler(commands.cb_players, pattern='pattern_players'))
 
     if mode == "dev":
         updater.start_polling()
