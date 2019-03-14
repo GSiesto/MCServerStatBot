@@ -36,7 +36,10 @@ if __name__ == '__main__':
     dispatcher.add_handler(CommandHandler('get', data.get, pass_user_data=True))
 
     # Callback Handlers
+    dispatcher.add_handler(CallbackQueryHandler(commands.cb_status, pattern='pattern_status'))
     dispatcher.add_handler(CallbackQueryHandler(commands.cb_players, pattern='pattern_players'))
+    dispatcher.add_handler(CallbackQueryHandler(commands.cb_about, pattern='pattern_about'))
+
 
 
     if mode == "dev":
