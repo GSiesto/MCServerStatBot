@@ -1,3 +1,3 @@
-python-telegram-bot
-schedule
-mcstatus
+telegram
+python-telegram-bot==12.0.0b1
+mcstatus==2.2.1

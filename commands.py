@@ -4,244 +4,226 @@
 
 import telegram
 import logging
-import schedule
-from functools import wraps
 from mcstatus import MinecraftServer
 import re
+from telegram.ext.dispatcher import run_async
 
-from telegram import ChatAction
-from telegram.ext import CommandHandler, Job
 
 import utils
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-welcome_text = "👾 Minecraft Server Status 👾\n\n/status _url.example.com_\n/players _play.example.com_\n/track " \
-               "_play.example.com_ _minutes_\n/untrack _play.example.com_\n\nBot developed by @GSiesto "
+welcome_text = "༼ つ ◕ ◡ ◕ ༽つ\nMinecraft Server Status\n\n/status _url.example.com_\n/players _play.example.com_\n\nBot developed by @GSiesto"
 
-URL = None
-STATUS = None
-QUERY = None
+btn_players = telegram.InlineKeyboardButton("Players", callback_data='pattern_players')
+btn_status = telegram.InlineKeyboardButton("Status", callback_data='pattern_status')
+btn_about = telegram.InlineKeyboardButton("About", callback_data='pattern_about')
+keyboard = [[btn_status, btn_players, btn_about]]
+reply_markup = telegram.InlineKeyboardMarkup(keyboard)
 
-TRACKER = dict()
+# ==========================
+# Commands
+# ==========================
+
+@run_async
+def cmd_start(update, context):
+    """Usage: /start"""
+    context.bot.send_chat_action(chat_id=update.message.chat_id, action=telegram.ChatAction.TYPING)
+    context.bot.send_message(update.message.chat_id, text=welcome_text, parse_mode=telegram.ParseMode.MARKDOWN)
 
 
-def cmd_start(bot, update):
-    bot.send_chat_action(chat_id=update.message.chat_id, action=telegram.ChatAction.TYPING)
-    bot.send_message(update.message.chat_id, text=welcome_text, parse_mode=telegram.ParseMode.MARKDOWN)
+@run_async
+def cmd_status(update, context):
+    """Usage: /status url"""
+    logging.info("/status called")
+    context.bot.send_chat_action(chat_id=update.message.chat_id, action=telegram.ChatAction.TYPING)
 
-
-def cmd_status(bot, update, args):
-    bot.send_chat_action(chat_id=update.message.chat_id, action=telegram.ChatAction.TYPING)
-
-    global URL, STATUS, QUERY
-
-    URL = args[0]
-    server = MinecraftServer.lookup(URL)
-    STATUS = server.status()
-
-    if not utils.validUrl(args[0]):
-        error_url(bot, update, args)
-        logging.error_status("Invalid URL, too long")
-        return
+    chat_data = context.chat_data
 
     try:
-        info_status(bot, update.message.chat_id)
+
+        if len(context.args) != 1:
+            error_incomplete(context.bot, update)
+            logging.info("/status did't provide an url", )
+            return
+
+        if not utils.validUrl(context.args[0]):
+            error_url(context.bot, update, context.args)
+            logging.info("Invalid URL, too long")
+            return
+
+        chat_data['url'] = context.args[0]
+        chat_data['server'] = MinecraftServer.lookup(chat_data['url'])
+        chat_data['status'] = chat_data['server'].status()
+
+        info_status(context.bot, update.message.chat_id, chat_data['url'], chat_data['status'])
+        logging.info("/status %s online" % context.args[0])
     except Exception as e:
-        error_status(bot, update.message.chat_id)
+        error_status(context.bot, update.message.chat_id, chat_data['url'])
         logging.exception(e)
 
 
-def cmd_players(bot, update, args):
-    bot.send_chat_action(chat_id=update.message.chat_id, action=telegram.ChatAction.TYPING)
+@run_async
+def cmd_players(update, context):
+    """Usage: /players url"""
+    logging.info("/players called")
+    context.bot.send_chat_action(chat_id=update.message.chat_id, action=telegram.ChatAction.TYPING)
+
+    chat_data = context.chat_data
+
     try:
-        global URL, STATUS, QUERY
 
-        URL = args[0]
-        server = MinecraftServer.lookup(URL)
-        QUERY = server.query()
+        if not context.args[0]:
+            error_url(context.bot, update, context.args)
+            logging.error("You must provide an URL, /players minecraft.example.com")
+            return
 
-        bot.sendMessage(
-            chat_id=update.message.chat_id,
-            text="👾 Minecraft Server Status 👾\n\n   👥 *Players*\n╭\n*Url:* {0}\n*Users Online* ({1})*:*{2}\n╰\n".format(
-                URL,
-                len(QUERY.players.names),
-                str("```" + ", ".join(QUERY.players.names) + "```")
-            )
-            , parse_mode=telegram.ParseMode.MARKDOWN)
+        if not utils.validUrl(context.args[0]):
+            error_url(context.bot, update, context.args)
+            logging.info("Invalid URL, too long")
+            return
+
+        chat_data['url'] = context.args[0]
+        chat_data['server'] = MinecraftServer.lookup(chat_data['url'])
+        chat_data['query'] = chat_data['server'].query()
+
+        info_players(context.bot, update.message.chat_id,  chat_data['url'],  chat_data['query'])
+        logging.info("/players %s online" % context.args[0])
+
     except Exception as e:
-        bot.sendMessage(
-            text="👾 Minecraft Server Status 👾\n\n   👥 *Url:* {0}\n╭\n*Error:*\nCoulnd't retrieve data from this server\n╰\n".format(
-                URL
-            )
-            , chat_id=update.message.chat_id
-            , parse_mode=telegram.ParseMode.MARKDOWN)
+        error_status(context.bot, update.message.chat_id,  chat_data['url'])
         logging.exception(e)
 
 
-def cb_players(bot, update):
-    global URL, STATUS, QUERY
+# ==========================
+# CallBacks
+# ==========================
+
+@run_async
+def cb_status(update, context):
+    logging.info("CallBack Status called")
+
+    chat_data = context.chat_data
 
     try:
-        server = MinecraftServer.lookup(URL)
-        QUERY = server.query()
 
-        bot.editMessageText(
-            text="👾 Minecraft Server Status 👾\n\n   👥 *Players*\n╭\n*Url:* {0}\n*Users Online* ({1})*:*{2}\n╰\n".format(
-                URL,
-                len(QUERY.players.names),
-                str("```" + ", ".join(QUERY.players.names) + "```")
-            )
+        chat_data['status'] = chat_data['server'].status()
+
+        description_format = re.sub('§.', '', chat_data['status'].description['text'])
+        description_format = re.sub('', '', description_format)
+
+        context.bot.editMessageText(
+            text=(
+                "(ﾉ◕ヮ◕)ﾉ:･ﾟ✧\n╭ ✅ *Online*\n*Url:* `{0}`\n*Description:*\n_{1}_\n*Version:* {"
+                "2}\n*Ping:* {3}ms\n*Players:* {4}/{5}\n╰".format(
+                    chat_data['url'],
+                    description_format,
+                    chat_data['status'].version.name,
+                    chat_data['status'].latency,
+                    chat_data['status'].players.online,
+                    chat_data['status'].players.max,
+                ))
+            , reply_markup=reply_markup
             , chat_id=update.callback_query.message.chat_id
             , message_id=update.callback_query.message.message_id
             , parse_mode=telegram.ParseMode.MARKDOWN)
-    except Exception as e:
-        error_players(bot, update)
-        logging.exception(e)
 
-
-def cb_status(bot, update):
-    try:
-        info_status(bot, update.callback_query.message.chat_id)
     except Exception as e:
         logging.exception(e)
 
 
-def cb_about(bot, update):
+@run_async
+def cb_players(update, context):
+    logging.info("CallBack Players called")
+
+    chat_data = context.chat_data
+
     try:
-        bot.editMessageText(
+
+        chat_data['query'] = chat_data['server'].query()
+
+        context.bot.editMessageText(
+            text="(•(•◡(•◡•)◡•)•)\n╭ ✅ *Online*\n*Url:* {0}\n*Users Online* {1}{2}\n╰\n".format(
+                chat_data['url'],
+                len( chat_data['query'].players.names),
+                str("```" + ", ".join( chat_data['query'].players.names) + "```")
+            )
+            , reply_markup=reply_markup
+            , chat_id=update.callback_query.message.chat_id
+            , message_id=update.callback_query.message.message_id
+            , parse_mode=telegram.ParseMode.MARKDOWN)
+
+    except Exception as e:
+        error_status(context.bot, update,  chat_data['url'])
+        logging.exception(e)
+
+
+@run_async
+def cb_about(update, context):
+    logging.info("CallBack About called")
+
+    try:
+        context.bot.editMessageText(
             text=welcome_text
             , chat_id=update.callback_query.message.chat_id
+            , reply_markup=reply_markup
             , message_id=update.callback_query.message.message_id
             , parse_mode=telegram.ParseMode.MARKDOWN)
     except Exception as e:
         logging.exception(e)
 
 
-def cmd_track(bot, update, job_queue, args):
-    global URL, TRACKER
+# ==========================
+# Info
+# ==========================
 
-    URL = args[0]
-    interval = int(args[1]) * 60
+def info_status(bot, chat_id, _url, _status):
 
-    bot.send_chat_action(chat_id=update.message.chat_id, action=telegram.ChatAction.TYPING)
-
-    TRACKER = {
-        "url": URL,
-        "state": "unknown"
-    }
-
-    bot.sendMessage(
-        text="👾 Minecraft Server Status 👾\n\n   🔘 *Tracking* each {1} minute/s\n*Url:* {0}".format(
-            URL,
-            int(interval / 60)
-        )
-        , chat_id=update.message.chat_id
-        , parse_mode=telegram.ParseMode.MARKDOWN)
-
-    job_queue.run_repeating(tracker, interval=interval, first=0, context=(update.message.chat_id, job_queue))
-
-
-def tracker(bot, job):
-    try:
-        global URL, STATUS, QUERY, TRACKER
-
-        chat_id, job_queue = job.context
-
-        """
-        bot.sendMessage(
-            chat_id=chat_id,
-            text="HOLA", parse_mode=telegram.ParseMode.MARKDOWN)
-        """
-
-        # TODO control args
-        # TODO change for cmd_status
-        # URL = args[0]
-        server = MinecraftServer.lookup(URL)
-        STATUS = server.status()
-
-        if TRACKER.get("state") == "offline" or TRACKER.get("state") == "unknown":
-            TRACKER = {
-                "url": URL,
-                "state": "online"
-            }
-
-            bot.sendMessage(
-                text="🔘 *State Changed*\n*Url:* {0}.\n".format(
-                    URL,
-                )
-                , chat_id=chat_id
-                , parse_mode=telegram.ParseMode.MARKDOWN)
-
-            logging.info(TRACKER.__str__())
-
-            info_status(bot, chat_id)
-
-    except Exception as e:
-        if TRACKER.get("state") == "online" or TRACKER.get("state") == "unknown":
-            TRACKER = {
-                "url": URL,
-                "state": "offline"
-            }
-            logging.info(TRACKER.__str__())
-            error_status(bot, chat_id)
-
-        logging.exception(e)
-
-
-def info_status(bot, chat_id):
-    global URL, STATUS, QUERY
-
-    btn_players = telegram.InlineKeyboardButton("Players",
-                                                callback_data='pattern_players')
-    btn_status = telegram.InlineKeyboardButton("Status",
-                                               callback_data='pattern_status')
-    btn_plugins = telegram.InlineKeyboardButton("Plugins", callback_data="TODO")
-    btn_ping = telegram.InlineKeyboardButton("Ping", callback_data="TODO")
-    btn_about = telegram.InlineKeyboardButton("About", callback_data='pattern_about')
-
-    keyboard = [[btn_players, btn_about]]
-
-    reply_markup = telegram.InlineKeyboardMarkup(keyboard)
-
-    description_format = re.sub('(§.)', '', str(STATUS.description['text']))
-    description_format = re.sub('[ \t]', '', description_format)
+    description_format = re.sub('§.', '', _status.description['text'])
+    description_format = re.sub('', '', description_format)
 
     bot.sendMessage(
         chat_id=chat_id,
         text=(
-            "👾 Minecraft Server Status 👾\n\n    ✅ *Online*\n╭\n*Url:* {0}\n*Description:*\n_{1}_\n*Version:* {"
+            "(ﾉ◕ヮ◕)ﾉ:･ﾟ✧\n╭ ✅ *Online*\n*Url:* `{0}`\n*Description:*\n_{1}_\n*Version:* {"
             "2}\n*Ping:* {3}ms\n*Players:* {4}/{5}\n╰".format(
-                URL,
+                _url,
                 description_format,
-                STATUS.version.name,
-                STATUS.latency,
-                STATUS.players.online,
-                STATUS.players.max,
+                _status.version.name,
+                _status.latency,
+                _status.players.online,
+                _status.players.max,
             ))
         , reply_markup=reply_markup
         , parse_mode=telegram.ParseMode.MARKDOWN)
 
 
-def error_status(bot, chat_id):
-    global URL
+def info_players(bot, chat_id, _url, _query):
 
     bot.sendMessage(
         chat_id=chat_id,
-        text="👾 Minecraft Server Status 👾\n\n  ⭕ *Offline*\n\n╭\n*Url:* {0}\n*Error Description:*\n{1}\n╰\n".format(
-            URL,
-            str("_Could not connect to the server_")
-        ), parse_mode=telegram.ParseMode.MARKDOWN)
-
-
-def error_players(bot, update):
-    global URL
-    bot.editMessageText(
-        text="👾 Minecraft Server Status 👾\n\n👥 *Url:* {0}\n╭\n*Error:*\nCoulnd't retrieve data from this server\n╰\n".format(
-            URL
+        text="(•(•◡(•◡•)◡•)•)\n╭ ✅ *Online*\n*Url:* `{0}`\n*Users Online* {1}{2}\n╰\n".format(
+            _url,
+            len(_query.players.names),
+            str("```" + ", ".join(_query.players.names) + "```")
         )
-        , chat_id=update.callback_query.message.chat_id
-        , message_id=update.callback_query.message.message_id
+        , reply_markup=reply_markup
+        , parse_mode=telegram.ParseMode.MARKDOWN)
+
+
+# ==========================
+# Error
+# ==========================
+
+def error_status(bot, chat_id, _url):
+
+    bot.sendMessage(
+        chat_id=chat_id,
+        text="(╯°□°）╯ ︵ ┻━┻\n╭ ⭕ *Offline*\n*Url:* `{0}`\n*Error Description:*\n{1}\n╰\n".format(
+            _url,
+            str("_Could not connect to the server_")
+        )
+        , reply_markup=reply_markup
         , parse_mode=telegram.ParseMode.MARKDOWN)
 
 
@@ -249,8 +231,19 @@ def error_url(bot, update, args):
     bot.sendMessage(
         chat_id=update.message.chat_id,
         text=(
-            "👾 Minecraft Server Status 👾\n\n️   🔻 *Error*\n╭\n*Url:* {0}\n*Error Description:*\n{1}\n╰\n╭\n*Correct Examples:*\n_play.minecraft.net_\n_minecraftgame.org_\n╰").format(
+            "(╯°□°）╯ ︵ ┻━┻\n╭ 🔻 *Error*\n*Url:* `{0}`\n*Error Description:*\n{1}\n\n*Correct Examples:*\n_play.minecraft.net_\n_minecraftgame.org_\n╰").format(
             args[0],
             str("_The url introduced is not valid, please, try again_")
         )
+        , reply_markup=reply_markup
+        , parse_mode=telegram.ParseMode.MARKDOWN)
+
+
+def error_incomplete(bot, update):
+    bot.sendMessage(
+        chat_id=update.message.chat_id,
+        text=(
+            "(╯°□°）╯ ︵ ┻━┻\n╭ 🔻 *Error*\n_You must provide an url please, try again_\n\n*Correct Examples:*\n_/status play.minecraft.net_\n_/status minecraftgame.org:25898_\n╰"
+        )
+        , reply_markup=reply_markup
         , parse_mode=telegram.ParseMode.MARKDOWN)
