@@ -6,8 +6,7 @@ import logging
 import commands
 import os
 import sys
-from telegram.ext import Updater, CommandHandler, CallbackQueryHandler
-
+from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, PicklePersistence, ConversationHandler
 
 mode = os.getenv("MODE")
 TOKEN = os.getenv("TOKEN")
@@ -16,7 +15,9 @@ TOKEN = os.getenv("TOKEN")
 if __name__ == '__main__':
     logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-    updater = Updater(TOKEN, use_context=True)
+    my_persistence = PicklePersistence(filename='persistent_data')
+
+    updater = Updater(TOKEN, persistence=my_persistence, use_context=True)
     dispatcher = updater.dispatcher
 
     # Commands Handlers
