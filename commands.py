@@ -9,7 +9,10 @@ import re
 from telegram.ext.dispatcher import run_async
 import utils
 
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logging.basicConfig(filename="command_logs.log",
+                    filemode='a',
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                    level=logging.INFO)
 
 welcome_text = "༼ つ ◕ ◡ ◕ ༽つ\nMinecraft Server Status\n\n/status _url.example.com_\n/players _play.example.com_\n\nBot developed by @GSiesto"
 
