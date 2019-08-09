@@ -1,3 +1,6 @@
 #Data
 persistent_data
 *.log
+__pycache__
+.idea
+*.pyc

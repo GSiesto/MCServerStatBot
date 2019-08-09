@@ -1,7 +1,7 @@
 # MCServerStatBot
-Check if your favourite Minecraft Servers are online, you can even see the players that are connected.
+Telegram Bot that helps you to check if your favourite Minecraft Servers are online. You can even see the players that are connected.
 
-The Bot is deployed in a Heroku instance, you can chat with it now
+*The Bot is deployed in a Raspberry Pi, you can chat with it now*
 
 > [@MCServerStatBot](https://t.me/MCServerStatBot)
 
@@ -11,17 +11,24 @@ The Bot is deployed in a Heroku instance, you can chat with it now
 ## How to Execute in your local machine
 ### Enviroment Variables
 
-TOKEN = *Your telegram TOKEM ID*
+TOKEN = **Your telegram TOKEM ID**
 
-MODE = "DEV"
+MODE = "DEV" (Local Machine) or "PROD" (For a Heroku deployment)
 
-### Running
+### Usage
 Execute with python the file `main.py`.
-If everything was set up fine, you will be able to start chating with your own bot.
-A file called persistent_data will be generated. This file makes it possible for the instance to know again what the link was, and thus be able to use the buttons on the screen.
+If everything was set up fine, you will be able to start chatting with your own bot.
+A file called persistent_data will be generated. This file makes it possible for the instance to know again what the link was, and thus be able to use the inline buttons (CallBacks) on the screen.
+
+Example
+
+```
+pip install -r requirements.txt
+MODE=dev TOKEN=xxxxxxxxxxxxxxxxxxxxxxxx python main.py
+```
 
 ## Notes
-* If the Minecraft Servers doen't allow Queries `enable-query=true` in `server.properties`, the bot will not be able to show the players that are connected to the game.
+* If the Minecraft Servers doesn't allow Queries `enable-query=true` in `server.properties`, the bot will not be able to show the players that are connected to the game.
 * It is only possible to use the inline buttons for the last petition that was made. For example, if you called two status instances, the inline buttons will only work for the last one.
 
 
