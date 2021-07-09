@@ -208,8 +208,6 @@ def cb_about(update, context):
 def info_status(bot, chat_id, _url, _status):
     description_format = re.sub('§.', '', _status.description)
     description_format = re.sub('', '', description_format)
-    # print(_status.raw)
-    # description_format = _status.description
 
     bot.sendMessage(
         chat_id=chat_id,
@@ -229,7 +227,6 @@ def info_status(bot, chat_id, _url, _status):
 
 def info_players(bot, chat_id, _url, _query, error_query=False):
     
-    # print(_query.raw)
     if not error_query:
         bot.sendMessage(
             chat_id=chat_id,
