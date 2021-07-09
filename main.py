@@ -39,7 +39,7 @@ if __name__ == '__main__':
         updater.start_webhook(listen="0.0.0.0",
                               port=PORT,
                               url_path=TOKEN)
-        updater.bot.set_webhook("https://{}.herokuapp.com/{}".format(HEROKU_APP_NAME, TOKEN))
+        updater.bot.webhook_url("https://{}.herokuapp.com/{}".format(HEROKU_APP_NAME, TOKEN))
     else:
         logging.error("No MODE specified!")
         sys.exit(1)
