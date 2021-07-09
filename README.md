@@ -1,5 +1,5 @@
 # MCServerStatBot
-Telegram Bot that helps you to check if your favourite Minecraft Servers are online. You can even see the players that are connected.
+Telegram Bot that helps you to check if your favorite Minecraft Servers are online. You can even see the players that are connected.
 
 *The Bot is deployed in a Raspberry Pi, you can chat with it now*
 
