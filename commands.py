@@ -27,14 +27,12 @@ reply_markup = telegram.InlineKeyboardMarkup(keyboard)
 # Commands
 # ==========================
 
-@run_async
 def cmd_start(update, context):
     """Usage: /start"""
     context.bot.send_chat_action(chat_id=update.message.chat_id, action=telegram.ChatAction.TYPING)
     context.bot.send_message(update.message.chat_id, text=welcome_text, parse_mode=telegram.ParseMode.MARKDOWN)
 
 
-@run_async
 def cmd_status(update, context):
     """Usage: /status url"""
     logging.info("/status called")
@@ -65,13 +63,13 @@ def cmd_status(update, context):
         logging.exception(e)
 
 
-@run_async
 def cmd_players(update, context):
     """Usage: /players url"""
     logging.info("/players called")
     context.bot.send_chat_action(chat_id=update.message.chat_id, action=telegram.ChatAction.TYPING)
 
     chat_data = context.chat_data
+    flag_err_query = False
 
     try:
 
@@ -87,10 +85,18 @@ def cmd_players(update, context):
 
         chat_data['url'] = context.args[0]
         query = MinecraftServer.lookup(chat_data['url'])
-        chat_data['server'] = query
-        chat_data['query'] = query.query()
+        
+        try:
+            chat_data['server'] = query
+            chat_data['query'] = query.query()
+        except:
+            # https://github.com/Dinnerbone/mcstatus/issues/72
+            chat_data['server'] = query
+            chat_data['query'] = query.status() # At least show a few players
+            flag_err_query = True
+            logging.info("flag_err_query")
 
-        info_players(context.bot, update.message.chat_id, chat_data['url'], chat_data['query'])
+        info_players(context.bot, update.message.chat_id, chat_data['url'], chat_data['query'], error_query=flag_err_query)
         logging.info("/players %s online" % context.args[0])
 
     except Exception as e:
@@ -102,7 +108,6 @@ def cmd_players(update, context):
 # CallBacks
 # ==========================
 
-@run_async
 def cb_status(update, context):
     logging.info("CallBack Status called")
 
@@ -112,7 +117,7 @@ def cb_status(update, context):
 
         chat_data['status'] = chat_data['server'].status()
 
-        description_format = re.sub('§.', '', chat_data['status'].description['text'])
+        description_format = re.sub('§.', '', chat_data['status'].description)
         description_format = re.sub('', '', description_format)
 
         context.bot.editMessageText(
@@ -136,33 +141,52 @@ def cb_status(update, context):
         logging.exception(e)
 
 
-@run_async
 def cb_players(update, context):
     logging.info("CallBack Players called")
 
     chat_data = context.chat_data
+    flag_err_query = False
 
     try:
         query = MinecraftServer.lookup(chat_data['url'])
-        chat_data['query'] = query.query()
-
-        context.bot.editMessageText(
-            text="(•(•◡(•◡•)◡•)•)\n╭ ✅ *Online*\n*Url:* `{0}`\n*Users Online* {1}*:*\n{2}\n╰\n".format(
-                chat_data['url'],
-                len(chat_data['query'].players.names),
-                str("`" + "`, `".join(chat_data['query'].players.names) + "`")
-            )
-            , reply_markup=reply_markup
-            , chat_id=update.callback_query.message.chat_id
-            , message_id=update.callback_query.message.message_id
-            , parse_mode=telegram.ParseMode.MARKDOWN)
+        
+        try:
+            chat_data['query'] = query.query()
+        except Exception as e:
+            # https://github.com/Dinnerbone/mcstatus/issues/72
+            chat_data['server'] = query
+            chat_data['query'] = query.status() # At least show a few players
+            flag_err_query = True
+            logging.info("flag_err_query")
+        
+        if not flag_err_query:
+            context.bot.editMessageText(
+                text="(•(•◡(•◡•)◡•)•)\n╭ ✅ *Online*\n*Url:* `{0}`\n*Users Online* {1}*:*\n{2}\n╰\n".format(
+                    chat_data['url'],
+                    len(chat_data['query'].players.names),
+                    str("`" + "`, `".join(chat_data['query'].players.names) + "`")
+                )
+                , reply_markup=reply_markup
+                , chat_id=update.callback_query.message.chat_id
+                , message_id=update.callback_query.message.message_id
+                , parse_mode=telegram.ParseMode.MARKDOWN)
+        else:
+            context.bot.editMessageText(
+                text="(•(•◡(•◡•)◡•)•)\n╭ ✅ *Online*\n*Url:* `{0}`\n*Users Online* {1}\n*Max Users Allowed* {2}\n\n_The names of the players cannot be displayed since the server does not allow queries. _\n╰\n".format(
+                    chat_data['url'],
+                    str(chat_data['query'].players.online),
+                    str(chat_data['query'].players.max)
+                )
+                , reply_markup=reply_markup
+                , chat_id=update.callback_query.message.chat_id
+                , message_id=update.callback_query.message.message_id
+                , parse_mode=telegram.ParseMode.MARKDOWN)
 
     except Exception as e:
         error_players_edit(update, context.bot, chat_data['url'])
         logging.exception(e)
 
 
-@run_async
 def cb_about(update, context):
     logging.info("CallBack About called")
 
@@ -182,8 +206,10 @@ def cb_about(update, context):
 # ==========================
 
 def info_status(bot, chat_id, _url, _status):
-    description_format = re.sub('§.', '', _status.description['text'])
+    description_format = re.sub('§.', '', _status.description)
     description_format = re.sub('', '', description_format)
+    # print(_status.raw)
+    # description_format = _status.description
 
     bot.sendMessage(
         chat_id=chat_id,
@@ -201,16 +227,30 @@ def info_status(bot, chat_id, _url, _status):
         , parse_mode=telegram.ParseMode.MARKDOWN)
 
 
-def info_players(bot, chat_id, _url, _query):
-    bot.sendMessage(
-        chat_id=chat_id,
-        text="(•(•◡(•◡•)◡•)•)\n╭ ✅ *Online*\n*Url:* `{0}`\n*Users Online* {1}*:*\n{2}\n╰\n".format(
-            _url,
-            len(_query.players.names),
-            str("`" + "`, `".join(_query.players.names) + "`")
-        )
-        , reply_markup=reply_markup
-        , parse_mode=telegram.ParseMode.MARKDOWN)
+def info_players(bot, chat_id, _url, _query, error_query=False):
+    
+    # print(_query.raw)
+    if not error_query:
+        bot.sendMessage(
+            chat_id=chat_id,
+            text="(•(•◡(•◡•)◡•)•)\n╭ ✅ *Online*\n*Url:* `{0}`\n*Users Online* {1}*:*\n{2}\n╰\n".format(
+                _url,
+                len(_query.players.names),
+                str("`" + "`, `".join(_query.players.names) + "`")
+            )
+            , reply_markup=reply_markup
+            , parse_mode=telegram.ParseMode.MARKDOWN)
+    else:
+        bot.sendMessage(
+            chat_id=chat_id,
+            text="(•(•◡(•◡•)◡•)•)\n╭ ✅ *Online*\n*Url:* `{0}`\n*Users Online* {1}\n*Max Users Allowed* {2}\n\n_The names of the players cannot be displayed since the server does not allow queries. _\n╰\n".format(
+                _url,
+                str(_query.players.online),
+                str(_query.players.max)
+            )
+            , reply_markup=reply_markup
+            , parse_mode=telegram.ParseMode.MARKDOWN)
+        
 
 
 # ==========================
