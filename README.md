@@ -11,7 +11,7 @@ Telegram Bot that helps you to check if your favorite Minecraft Servers are onli
 ## How to Execute in your local machine
 ### Enviroment Variables
 
-TOKEN = **Your telegram TOKEM ID**
+TOKEN = **Your telegram TOKEN ID**
 
 MODE = "DEV" (Local Machine) or "PROD" (For a Heroku deployment)
 
