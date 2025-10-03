@@ -152,15 +152,17 @@ The application follows a **monolithic architecture** with three Python modules:
   - Timeout: 30 seconds
   - Runtime: Python 3.12
   - Concurrency: Auto-scaling (0 to 1000+)
+  - Function URL: Native HTTPS endpoint (no API Gateway)
+  - Environment: Encrypted variables for bot token (KMS)
 - **Responsibilities**:
-  - Receive and validate Telegram webhook events (triggered by API Gateway)
+  - Receive and validate Telegram webhook events (via Lambda Function URL)
   - Parse commands and route to appropriate handlers
   - Invoke MC Query Lambda for server queries
   - Format and send responses back to Telegram
   - Handle callback queries (inline buttons)
 - **Scaling**: Automatic, event-driven (0 to 1000+ concurrent executions)
 - **State**: Stateless with ephemeral cache in Lambda memory (warm containers ~5-15 min)
-- **Cost**: $0 within free tier (1M requests/month)
+- **Cost**: $0 (completely within free tier)
 
 **2. MC Query Lambda Function**
 - **Purpose**: Isolated function for querying Minecraft servers
@@ -644,12 +646,12 @@ MCServerStatBot/
    - Reduces deployment package size
    - Faster deployments
    
-5. **API Gateway Integration**
-   - Create REST API in API Gateway
-   - POST /webhook endpoint → Bot Handler Lambda
-   - Configure Lambda proxy integration
-   - Set up request validation
-   - Configure rate limiting
+5. **Lambda Function URL Setup**
+   - Enable Function URL for Bot Handler Lambda
+   - Configure auth type (NONE for public Telegram webhook)
+   - Set CORS if needed
+   - Get unique HTTPS URL (AWS-managed TLS certificate)
+   - No API Gateway needed - completely free
    
 6. **Observability**
    - CloudWatch Logs (automatic for Lambda)
@@ -665,12 +667,13 @@ MCServerStatBot/
 
 #### Success Criteria:
 - ✅ Both Lambda functions deployed and functional
-- ✅ API Gateway triggers Bot Handler Lambda
+- ✅ Lambda Function URL triggers Bot Handler Lambda (no API Gateway)
 - ✅ MC Query Lambda invoked synchronously
 - ✅ In-memory caching reduces redundant queries
 - ✅ CloudWatch Logs show all invocations
-- ✅ Cost stays within free tier (~$0.93/month)
+- ✅ Cost is $0/month (completely within free tier)
 - ✅ Cold start time <1 second
+- ✅ Bot token encrypted in environment variables (KMS)
 
 #### Deliverables:
 - `lambda/bot_handler/` (Lambda function code)
@@ -721,10 +724,11 @@ Same as Lambda milestone but with FastAPI containers, ElastiCache Redis, and ECS
    - If needed: Implement `DynamoDBSessionRepository`
    - Alternative: Extend Redis session TTL to 1 hour instead
    
-4. **Secrets Management**
-   - Move bot token to AWS Secrets Manager
-   - Update config to fetch secrets at startup
-   - Rotate secrets without redeploying
+4. **Secrets Management (Cost-Optimized)**
+   - Store bot token in encrypted Lambda environment variables
+   - Use AWS KMS for encryption (within free tier: 20K requests/month)
+   - No Secrets Manager needed (saves $0.43/month)
+   - Bot token decrypted automatically at Lambda runtime
    
 5. **CloudWatch Integration**
    - Configure CloudWatch Logs handler
@@ -733,9 +737,10 @@ Same as Lambda milestone but with FastAPI containers, ElastiCache Redis, and ECS
    - AWS X-Ray tracing integration (optional)
    
 6. **Webhook Configuration**
-   - Update webhook endpoint to use API Gateway or ALB URL
-   - SSL/TLS certificate setup
+   - Update webhook endpoint to use Lambda Function URL
+   - SSL/TLS automatically provided by AWS (no certificate management)
    - Remove Heroku-specific code
+   - No API Gateway needed (completely free)
    
 7. **Production Configuration**
    - Environment-specific configs (dev/staging/prod)
@@ -754,24 +759,24 @@ Same as Lambda milestone but with FastAPI containers, ElastiCache Redis, and ECS
    - Performance testing under load
 
 #### Success Criteria:
-- ✅ Session state cached in Redis (5-min TTL for callbacks)
-- ✅ MC queries cached in Redis/ElastiCache (30-60s TTL)
-- ✅ All secrets retrieved from Secrets Manager
+- ✅ Session state cached in Lambda memory (5-min TTL while warm)
+- ✅ MC queries cached in Lambda memory (30-60s TTL while warm)
+- ✅ Bot token stored in encrypted environment variables (KMS)
 - ✅ Logs flow to CloudWatch Logs
 - ✅ Custom metrics visible in CloudWatch
-- ✅ Services run in ECS Fargate (local simulation)
-- ✅ Webhook mode functional with HTTPS
+- ✅ Lambda Function URL serves webhook (no API Gateway)
+- ✅ Webhook mode functional with HTTPS (AWS-managed TLS)
 - ✅ Documentation complete for AWS deployment
-- ✅ Cost-optimized architecture: ~$39/month (67% savings vs. $118/month)
+- ✅ **Cost: $0/month (100% within AWS Free Tier)** 🎉
 
 #### Deliverables:
-- `shared/common/aws/` (AWS service clients - Secrets Manager, CloudWatch)
-- Redis session caching implementation
+- `lambda/` directory structure with both functions
+- Lambda deployment scripts (SAM/Terraform)
 - CloudWatch dashboard configurations
-- ECS task definitions (cost-optimized with Fargate Spot)
+- Lambda Function URL configuration
+- Encrypted environment variable setup guide
 - Deployment documentation
-- Cost optimization guide
-- Production-ready Docker images
+- Cost optimization guide (achieving $0/month)
 
 ---
 

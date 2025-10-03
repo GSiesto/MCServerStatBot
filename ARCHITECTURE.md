@@ -4,7 +4,7 @@
 
 ## High-Level Architecture Overview
 
-### **Serverless Architecture (RECOMMENDED - ~$0.93/month)**
+### **Serverless Architecture (RECOMMENDED - $0/month)** 💰🎯
 
 ```
                                     ┌─────────────────────────┐
@@ -19,13 +19,13 @@
 │                              AWS Cloud                                     │
 │                                                                            │
 │  ┌──────────────────────────────────────────────────────────────────────┐ │
-│  │                            API Gateway                               │ │
-│  │                            (REST API)                                │ │
-│  │  - Webhook endpoint: POST /webhook                                  │ │
-│  │  - Rate limiting: 10 req/sec per IP                                 │ │
-│  │  - Request validation & throttling                                  │ │
-│  │  - SSL/TLS termination                                              │ │
-│  │  - Lambda integration (direct invocation)                           │ │
+│  │                     Lambda Function URL                              │ │
+│  │              (Native HTTPS endpoint - FREE)                          │ │
+│  │  - URL: https://<unique-id>.lambda-url.<region>.on.aws/             │ │
+│  │  - Built-in HTTPS/TLS (AWS-managed certificate)                     │ │
+│  │  - No API Gateway needed                                            │ │
+│  │  - Direct Lambda invocation                                         │ │
+│  │  - IAM or public auth                                               │ │
 │  └────────────────────────────────┬─────────────────────────────────────┘ │
 │                                   │                                       │
 │                                   ▼                                       │
@@ -61,22 +61,24 @@
 │  │  └────────────────────────────────┘    └──────────────────────────┘│ │
 │  │                                                                      │ │
 │  │  Key Benefits:                                                       │ │
-│  │  ✅ Near-zero cost (~$0.93/month within free tier)                  │ │
+│  │  ✅ Completely FREE within AWS Free Tier ($0/month)                 │ │
 │  │  ✅ Auto-scaling from 0 to 1000+ concurrent executions              │ │
 │  │  ✅ No idle costs - pay only for actual requests                    │ │
 │  │  ✅ No container management or server maintenance                   │ │
 │  │  ✅ Built-in HA and fault tolerance across AZs                      │ │
+│  │  ✅ Lambda Function URL - no API Gateway cost                       │ │
 │  └──────────────────────────────────────────────────────────────────────┘ │
 │                                                                            │
 │  ┌──────────────────────────────────────────────────────────────────────┐ │
-│  │                      Security & Secrets                              │ │
+│  │                      Security & Configuration                        │ │
 │  │                                                                      │ │
-│  │  ┌──────────────────┐  ┌──────────────┐                            │ │
-│  │  │ Secrets Manager  │  │ IAM Roles    │                            │ │
-│  │  │ - Bot Token      │  │ - Lambda     │                            │ │
-│  │  │ - API Keys       │  │ - Execute    │                            │ │
-│  │  │ Auto-Rotation    │  │ - Logs       │                            │ │
-│  │  └──────────────────┘  └──────────────┘                            │ │
+│  │  ┌──────────────────────────┐  ┌──────────────┐                    │ │
+│  │  │ Encrypted Env Variables  │  │ IAM Roles    │                    │ │
+│  │  │ - Bot Token (KMS)        │  │ - Lambda     │                    │ │
+│  │  │ - Config values          │  │ - Execute    │                    │ │
+│  │  │ - No Secrets Manager     │  │ - Logs       │                    │ │
+│  │  │ - FREE                   │  │ - KMS Decrypt│                    │ │
+│  │  └──────────────────────────┘  └──────────────┘                    │ │
 │  └──────────────────────────────────────────────────────────────────────┘ │
 │                                                                            │
 │  ┌──────────────────────────────────────────────────────────────────────┐ │
@@ -267,12 +269,14 @@
 2. Telegram Platform
    │ (webhook POST)
    ▼
-3. API Gateway
-   │ (request validation, SSL termination, rate limiting)
+3. Lambda Function URL (Bot Handler)
+   │ Native HTTPS endpoint (AWS-managed TLS)
+   │ No API Gateway - direct Lambda invocation
    ▼
 4. Bot Handler Lambda (invoked)
    │ Cold start: <1 second (first invocation)
    │ Warm: <10ms (subsequent invocations)
+   │ Bot token loaded from encrypted env variable
    │
    ├─▶ Parse command
    │   Extract URL: "minecraft.server.com"
@@ -521,22 +525,29 @@ Note: DynamoDB permissions removed - no persistent storage needed
 | **Secrets Manager** | 2 secrets, 50K API calls | $1 |
 | **Total** | | **~$118/month** |
 
-### **Serverless Architecture with AWS Lambda (RECOMMENDED)** 🎯
-**Near-zero cost using AWS Free Tier for low-traffic scenarios**
+### **Ultra-Optimized Serverless Architecture (RECOMMENDED)** 💰🎯
+**Completely FREE using AWS Free Tier - Perfect for initial deployment**
 
 | Service | Free Tier | Typical Usage (50K cmd/day) | Cost |
 |---------|-----------|------------------------------|------|
 | **Lambda** | 1M requests/mo, 400K GB-sec/mo | ~1.5M requests/mo (50K×30 days) | **$0** (within free tier) |
-| **API Gateway** | 1M requests/mo (12 months) | 1.5M requests/mo | **$0.50** (500K × $0.001) |
-| **ElastiCache** | None | **ELIMINATED** - Use Lambda caching | **$0** |
+| **Lambda Function URL** | FREE (no API Gateway) | 1.5M requests/mo | **$0** (always free) |
+| **Encrypted Env Variables** | FREE (KMS: 20K req/mo free) | Config + bot token | **$0** (within free tier) |
 | **CloudWatch Logs** | 5GB ingestion/mo | ~2GB/mo | **$0** (within free tier) |
-| **Secrets Manager** | First 30 days free | 2 secrets, 50K API calls | **$0.43** ($0.40 + $0.03) |
 | **Data Transfer** | 100GB/mo | ~5GB/mo | **$0** (within free tier) |
-| **Total** | | | **~$0.93/month** 💰 |
+| **Total** | | | **$0/month** 🎉 |
 
-**After 12-month Free Tier expires (API Gateway):**
-- API Gateway: $5/month
-- **Total: ~$5.43/month** (still 95% cheaper than ECS)
+**Key Optimizations for Zero Cost:**
+- ✅ **Lambda Function URL** replaces API Gateway (saves $0.50-$5/month)
+- ✅ **Encrypted environment variables** replace Secrets Manager (saves $0.43/month)
+- ✅ **No ElastiCache** - Lambda in-memory cache sufficient
+- ✅ **No DynamoDB** - Stateless operation
+- ✅ **All within AWS Free Tier** - Permanently free for typical bot traffic
+
+**Long-term Cost (if exceeding free tier):**
+- Lambda beyond 1M requests: ~$0.20 per additional 1M requests
+- KMS beyond 20K requests: ~$0.03 per 10K requests
+- **Estimated at 2M requests/month: ~$0.20/month**
 
 ### **Alternative: ECS Fargate Architecture** (For comparison)
 **For higher traffic or if Lambda limits become a constraint**

@@ -236,7 +236,7 @@
 ### 4.2 Bot Handler Lambda
 - [ ] Create Lambda handler function (`handler.py`)
 - [ ] Integrate python-telegram-bot library
-- [ ] Parse API Gateway event (webhook payload)
+- [ ] Parse Lambda Function URL event (webhook payload)
 - [ ] Implement command routing logic
 - [ ] Invoke MC Query Lambda (boto3 lambda.invoke())
 - [ ] Format responses for Telegram
@@ -262,24 +262,24 @@
 - [ ] Deploy layer to AWS
 - [ ] Attach layer to both Lambda functions
 
-### 4.5 API Gateway Setup
-- [ ] Create REST API in API Gateway
-- [ ] Create POST /webhook endpoint
-- [ ] Configure Lambda proxy integration
-- [ ] Set up request validation
-- [ ] Configure rate limiting (10 req/sec per IP)
+### 4.5 Lambda Function URL Setup (No API Gateway Needed - FREE)
+- [ ] Enable Function URL for Bot Handler Lambda
+- [ ] Configure auth type (NONE for public webhook)
+- [ ] Set CORS configuration if needed
+- [ ] Get unique HTTPS URL (format: https://<id>.lambda-url.<region>.on.aws/)
+- [ ] AWS provides TLS certificate automatically
 - [ ] Test webhook with curl
 
 ### 4.6 Local Testing
 - [ ] Install AWS SAM CLI
 - [ ] Test Lambdas locally: `sam local invoke`
-- [ ] Test API Gateway locally: `sam local start-api`
+- [ ] Test Function URL locally: `sam local invoke`
 - [ ] Create test events for webhook payloads
 - [ ] Verify cold start time (<1 second)
 
 ### 4.7 Deployment & Testing
 - [ ] Deploy both Lambda functions to AWS
-- [ ] Deploy API Gateway
+- [ ] Deploy Lambda with Function URL enabled
 - [ ] Configure Telegram webhook URL
 - [ ] Integration test with real Telegram bot
 - [ ] Load test to verify free tier coverage
@@ -287,11 +287,11 @@
 
 ### 4.8 Milestone 4 Completion
 - [ ] Both Lambda functions deployed
-- [ ] API Gateway triggers Bot Handler Lambda
+- [ ] Lambda Function URL triggers Bot Handler Lambda (direct invocation)
 - [ ] MC Query Lambda invoked successfully
 - [ ] In-memory caching functional
 - [ ] CloudWatch Logs show invocations
-- [ ] Cost within free tier (~$0.93/month)
+- [ ] Cost: $0/month (completely within AWS Free Tier) 🎉
 - [ ] Cold start <1 second, warm <100ms
 - [ ] Create PR and merge to main
 - [ ] Tag release: `git tag v0.4.0-milestone-4-lambda`
@@ -302,7 +302,7 @@
 
 **Use only if:** Lambda limits exceeded (>1M req/month) or specific container needs
 
-**Cost:** ~$39/month vs. $0.93/month for Lambda
+**Cost:** ~$39/month vs. $0/month for Lambda with Function URL
 
 ### 4.1 Service Separation
 - [ ] Define OpenAPI spec for MC Query Service
@@ -397,7 +397,7 @@
 - [ ] Test with ElastiCache (dev account)
 
 ### 5.4 Secrets Management
-- [ ] Move bot token to AWS Secrets Manager
+- [ ] Store bot token in encrypted Lambda environment variables (KMS)
 - [ ] Update config to fetch secrets at startup
 - [ ] Test secret rotation
 - [ ] Document secret naming convention
@@ -415,7 +415,7 @@
 - [ ] AWS X-Ray tracing (optional)
 
 ### 5.6 Webhook Configuration
-- [ ] Update webhook endpoint to use API Gateway/ALB URL
+- [ ] Update webhook endpoint to use Lambda Function URL
 - [ ] SSL/TLS certificate setup
 - [ ] Remove Heroku-specific code
 - [ ] Test webhook with Telegram
@@ -456,7 +456,7 @@
 ### 5.11 Milestone 5 Completion
 - [ ] Session state cached in Redis (5-min TTL)
 - [ ] MC queries cached in Redis (30-60s TTL)
-- [ ] All secrets from Secrets Manager
+- [ ] Bot token encrypted in Lambda environment variables (KMS)
 - [ ] Logs flow to CloudWatch Logs
 - [ ] Custom metrics in CloudWatch
 - [ ] Webhook mode functional with HTTPS
@@ -517,7 +517,7 @@
 - [ ] Services communicate via HTTP/REST
 - [ ] Session state and MC cache in Redis (cost-optimized, no DynamoDB)
 - [ ] Caching reduces MC queries by >80%
-- [ ] Secrets managed in AWS Secrets Manager
+- [ ] Secrets encrypted in Lambda environment variables (KMS - free tier)
 
 ### Operations
 - [ ] Logs centralized in CloudWatch

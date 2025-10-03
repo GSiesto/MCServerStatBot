@@ -43,29 +43,31 @@ API Gateway
 
 ### Key AWS Services (Serverless - RECOMMENDED)
 - **AWS Lambda**: Compute (2 functions) - $0 within free tier (1M req/month)
-- **API Gateway**: Webhook endpoint - $0 within free tier first 12 months
-- **Secrets Manager**: Bot tokens - $0.43/month
+- **Lambda Function URL**: Native HTTPS webhook endpoint - $0 (always free)
+- **Encrypted Environment Variables**: Bot tokens via KMS - $0 within free tier (20K req/month)
 - **CloudWatch**: Logs, metrics - $0 within free tier (5GB/month)
 
-**Total Cost: ~$0.93/month** 🎯
+**Total Cost: $0/month** 💰🎉
 
 **Cost Breakdown:**
 - Lambda: $0 (within 1M request/month free tier)
-- API Gateway: $0.50 (500K requests beyond 1M free tier) 
-- Secrets Manager: $0.43 ($0.40 storage + API calls)
+- Lambda Function URL: $0 (always free, no API Gateway needed)
+- KMS encryption: $0 (within 20K request/month free tier)
 - CloudWatch: $0 (within 5GB free tier)
 - Data Transfer: $0 (within 100GB free tier)
 
-**After 12-month free tier (API Gateway):** ~$5.43/month
+**Long-term cost if exceeding free tier:** ~$0.20/month at 2M requests/month
 
-**Eliminated Services (Massive Savings):**
-- ❌ **ECS Fargate removed**: Lambda replaces containers (-$15/month)
-- ❌ **ElastiCache removed**: Lambda in-memory cache sufficient (-$8/month)
-- ❌ **DynamoDB removed**: Stateless operation (-$5/month)
-- ❌ **ALB removed**: API Gateway handles routing (-$25/month)
+**Ultra-Optimizations Applied:**
+- ✅ **Lambda Function URL** replaces API Gateway (saves $0.50-$5/month)
+- ✅ **Encrypted env variables** replace Secrets Manager (saves $0.43/month)
+- ✅ **ECS Fargate removed**: Lambda replaces containers (-$15/month)
+- ✅ **ElastiCache removed**: Lambda in-memory cache sufficient (-$8/month)
+- ✅ **DynamoDB removed**: Stateless operation (-$5/month)
+- ✅ **ALB removed**: Lambda Function URL handles routing (-$25/month)
 
 **Alternative: ECS Fargate (~$39/month)**
-- Use if traffic exceeds 1M requests/month consistently
+- Use if traffic consistently exceeds 1M requests/month
 - Or if specific container requirements exist
 
 ## 🚀 Modernized Tech Stack
@@ -108,18 +110,18 @@ API Gateway
 
 ### Phase 4: Serverless Lambda Functions (1-2 weeks) - **MEDIUM** ⭐ RECOMMENDED
 - ✅ Bot Handler Lambda + MC Query Lambda
-- ✅ API Gateway integration
+- ✅ Lambda Function URL (native HTTPS endpoint)
 - ✅ Lambda layers for dependencies
 - ✅ In-memory caching (ephemeral)
 - ✅ CloudWatch Logs integration
-- ✅ **Cost: ~$0.93/month** (within free tier)
+- ✅ **Cost: $0/month** (completely within free tier) 💰
 
 **Alternative:** Container-based microservices (2-3 weeks, ~$39/month) if Lambda limits exceeded
 
 ### Phase 5: AWS Integration (1-2 weeks) - **MEDIUM**
-- ✅ Secrets Manager integration
+- ✅ Encrypted environment variables (KMS) for bot token
 - ✅ CloudWatch Logs + custom metrics
-- ✅ API Gateway webhook setup
+- ✅ Lambda Function URL webhook setup
 - ✅ Lambda deployment automation (SAM/Terraform)
 - ✅ ECS task definitions
 - ✅ Deployment documentation
