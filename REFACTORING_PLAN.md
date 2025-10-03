@@ -152,7 +152,7 @@ The application follows a **monolithic architecture** with three Python modules:
   - Format and send responses back to Telegram
   - Handle callback queries (inline buttons)
 - **Scaling**: Horizontal auto-scaling based on CPU/memory or request count
-- **State**: Stateless (stores nothing locally), retrieves state from DynamoDB
+- **State**: Stateless (stores nothing locally), retrieves recent session state from Redis cache (5-min TTL)
 
 **2. Minecraft Query Service (ECS Fargate)**
 - **Purpose**: Isolated service for querying Minecraft servers
@@ -166,20 +166,33 @@ The application follows a **monolithic architecture** with three Python modules:
 - **Scaling**: Horizontal auto-scaling based on queue depth or latency
 - **Benefits**: Isolates network I/O from bot handler, prevents bot blocking
 
-**3. Data Storage**
+**3. Data Storage (Cost-Optimized Architecture)**
 
-**DynamoDB** (Primary State Store):
-- **Table: `user_sessions`**
-  - Partition Key: `chat_id` (string)
-  - Attributes: `last_url`, `last_query_time`, `server_data`, `ttl`
-  - Purpose: Store per-chat session data, last queried server
-  - TTL: Auto-expire old sessions after 7 days
+**ElastiCache Redis** (Primary & Only Storage - Recommended):
+- **Minecraft Query Cache**:
+  - Key Pattern: `mc:server:{hostname}:status` / `mc:server:{hostname}:players`
+  - TTL: 30-60 seconds per cache entry
+  - Purpose: Reduce redundant Minecraft server queries, improve response time
+  - Benefits: Sub-millisecond latency, reduces external API calls by 80%
 
-**ElastiCache Redis** (Caching Layer):
-- **Key Pattern**: `mc:server:{hostname}:status` / `mc:server:{hostname}:players`
-- **TTL**: 30-60 seconds per cache entry
-- **Purpose**: Reduce redundant Minecraft server queries, improve response time
-- **Benefits**: Sub-millisecond latency, reduces external API calls
+- **Session Cache (for callback buttons)**:
+  - Key Pattern: `session:{chat_id}`
+  - Value: `{last_url, query_time}`
+  - TTL: 300 seconds (5 minutes)
+  - Purpose: Enable inline callback buttons for recent queries
+  - Tradeoff: Callbacks only work for queries in last 5 minutes (acceptable - original bot had same limitation)
+
+**Design Decision: Stateless-First for Cost Optimization**
+- **DynamoDB eliminated** - saves $5/month minimum
+- Bot functionality unchanged - callbacks work for recent queries via Redis
+- Original implementation already had limitation: "It is only possible to use the inline buttons for the last petition that was made"
+- If persistent storage needed later: can add DynamoDB back for $5/month
+
+**Optional: DynamoDB (Only if Analytics/Long-term History Required)**
+- **NOT recommended for basic bot operation**
+- Only add if: user history tracking, analytics dashboard, or indefinite callback support needed
+- Cost: Additional $5-10/month
+- Alternative: Use Redis with 1-hour TTL for extended callback window
 
 **4. Event/Message Queue (Optional - Future Enhancement)**
 
@@ -213,7 +226,7 @@ The application follows a **monolithic architecture** with three Python modules:
 
 **AWS X-Ray**:
 - Distributed tracing across services
-- Visualize request flow: API Gateway → Bot Handler → MC Query Service → Redis/DynamoDB
+- Visualize request flow: API Gateway → Bot Handler → MC Query Service → Redis
 
 ### Technology Stack Modernization
 
@@ -285,7 +298,7 @@ The application follows a **monolithic architecture** with three Python modules:
   - Direct AWS ElastiCache compatibility
 
 #### AWS SDK
-- **Proposed**: **boto3** (latest) for DynamoDB, Secrets Manager, CloudWatch
+- **Proposed**: **boto3** (latest) for Secrets Manager, CloudWatch (DynamoDB optional - not needed for cost-optimized version)
 - **Justification**:
   - Official AWS SDK for Python
   - Comprehensive service coverage
@@ -640,16 +653,17 @@ MCServerStatBot/
    - Configure IAM role-based authentication (not passwords)
    - Test locally with AWS credentials
    
-2. **DynamoDB Integration**
-   - Implement `DynamoDBSessionRepository`
-   - Create DynamoDB table design
-   - Migration script from file-based to DynamoDB
-   - Local testing with DynamoDB Local
-   
-3. **Redis/ElastiCache Integration**
+2. **Redis/ElastiCache Integration** (Primary Storage)
    - Update cache layer for ElastiCache compatibility
+   - Implement session caching in Redis (5-min TTL for callbacks)
    - Connection pooling and failover handling
    - Cache invalidation strategies
+   
+3. **DynamoDB Integration** (OPTIONAL - Skip for Cost Optimization)
+   - **NOT needed for basic bot operation** - saves $5+/month
+   - Only implement if: persistent user history, analytics, or indefinite callback support required
+   - If needed: Implement `DynamoDBSessionRepository`
+   - Alternative: Extend Redis session TTL to 1 hour instead
    
 4. **Secrets Management**
    - Move bot token to AWS Secrets Manager
@@ -684,21 +698,23 @@ MCServerStatBot/
    - Performance testing under load
 
 #### Success Criteria:
-- ✅ Bot stores state in DynamoDB
-- ✅ MC queries cached in Redis/ElastiCache
+- ✅ Session state cached in Redis (5-min TTL for callbacks)
+- ✅ MC queries cached in Redis/ElastiCache (30-60s TTL)
 - ✅ All secrets retrieved from Secrets Manager
 - ✅ Logs flow to CloudWatch Logs
 - ✅ Custom metrics visible in CloudWatch
 - ✅ Services run in ECS Fargate (local simulation)
 - ✅ Webhook mode functional with HTTPS
 - ✅ Documentation complete for AWS deployment
+- ✅ Cost-optimized architecture: ~$39/month (67% savings vs. $118/month)
 
 #### Deliverables:
-- `shared/common/aws/` (AWS service clients)
-- DynamoDB table schema and migration scripts
+- `shared/common/aws/` (AWS service clients - Secrets Manager, CloudWatch)
+- Redis session caching implementation
 - CloudWatch dashboard configurations
-- ECS task definitions
+- ECS task definitions (cost-optimized with Fargate Spot)
 - Deployment documentation
+- Cost optimization guide
 - Production-ready Docker images
 
 ---

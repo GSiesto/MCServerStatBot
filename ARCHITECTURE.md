@@ -75,24 +75,30 @@
 │                           │                           │                    │
 │                           │                           │                    │
 │  ┌────────────────────────┼───────────────────────────┼──────────────────┐│
-│  │                Data & Caching Layer                │                  ││
+│  │            Caching Layer (Cost-Optimized)          │                  ││
 │  │                        │                           │                  ││
-│  │  ┌─────────────────────▼────┐        ┌────────────▼────────────────┐││
-│  │  │    DynamoDB              │        │  ElastiCache (Redis)        │││
-│  │  │                          │        │                             │││
-│  │  │  Table: user_sessions    │        │  - Cluster Mode Enabled     │││
-│  │  │  ┌──────────────────┐   │        │  - Multi-AZ                 │││
-│  │  │  │ chat_id (PK)     │   │        │  - Automatic Failover       │││
-│  │  │  │ last_url         │   │        │                             │││
-│  │  │  │ last_query_time  │   │        │  Key Pattern:               │││
-│  │  │  │ server_data      │   │        │  mc:server:{host}:status    │││
-│  │  │  │ ttl              │   │        │  mc:server:{host}:players   │││
-│  │  │  └──────────────────┘   │        │                             │││
-│  │  │                          │        │  TTL: 30-60 seconds         │││
-│  │  │  - On-Demand Billing     │        │  - In-Memory Performance    │││
-│  │  │  - Point-in-Time Backup  │        │  - Pub/Sub (future)         │││
-│  │  │  - DynamoDB Streams      │        └─────────────────────────────┘││
-│  │  └──────────────────────────┘                                       ││
+│  │                        │          ┌────────────────▼────────────────┐││
+│  │                        │          │  ElastiCache (Redis)            │││
+│  │                        │          │  Single-AZ for cost savings     │││
+│  │                        │          │  cache.t4g.micro (ARM, 0.5GB)   │││
+│  │                        │          │                                 │││
+│  │                        │          │  MC Query Cache (Primary):      │││
+│  │                        │          │    mc:server:{host}:status      │││
+│  │                        │          │    mc:server:{host}:players     │││
+│  │                        │          │    TTL: 30-60 seconds           │││
+│  │                        │          │                                 │││
+│  │                        │          │  Session Cache (Optional):      │││
+│  │                        │          │    session:{chat_id}            │││
+│  │                        │          │    TTL: 300 seconds (5 min)     │││
+│  │                        │          │                                 │││
+│  │                        │          │  Benefits:                      │││
+│  │                        │          │  - 80% query reduction          │││
+│  │                        │          │  - No DynamoDB needed           │││
+│  │                        │          │  - Stateless architecture       │││
+│  │                        │          └─────────────────────────────────┘││
+│  │                        │                                             ││
+│  │  Note: DynamoDB eliminated for cost optimization.                   ││
+│  │  Session state stored in Redis with 5-min TTL (acceptable tradeoff).││
 │  └──────────────────────────────────────────────────────────────────────┘│
 │                                                                            │
 │  ┌──────────────────────────────────────────────────────────────────────┐ │
@@ -187,9 +193,6 @@
    ├─▶ Parse command
    │   Extract URL: "minecraft.server.com"
    │
-   ├─▶ Check DynamoDB for recent query
-   │   Cache miss
-   │
    ├─▶ HTTP POST to MC Query Service
    │   URL: http://mc-query-service/api/v1/status
    │   Body: {"server_url": "minecraft.server.com"}
@@ -213,13 +216,10 @@
    ├─▶ Format response message
    │   "(ﾉ◕ヮ◕)ﾉ:･ﾟ✧\n✅ Online\nVersion: 1.20.1..."
    │
-   ├─▶ Save to DynamoDB (chat state)
-   │   {
-   │     "chat_id": "12345",
-   │     "last_url": "minecraft.server.com",
-   │     "last_query_time": "2024-10-03T12:00:00Z",
-   │     "server_data": {...}
-   │   }
+   ├─▶ Cache session in Redis (optional, for callbacks)
+   │   Key: session:{chat_id}
+   │   Value: {last_url, query_time}
+   │   TTL: 300 seconds (5 minutes)
    │
    └─▶ Send formatted message to Telegram API
        │
@@ -244,9 +244,10 @@
    │
    ├─▶ Parse callback: "pattern_players"
    │
-   ├─▶ Retrieve state from DynamoDB
-   │   chat_id: "12345"
-   │   → last_url: "minecraft.server.com"
+   ├─▶ Retrieve session from Redis
+   │   Key: session:{chat_id}
+   │   → last_url: "minecraft.server.com" (if not expired)
+   │   Note: Works for queries in last 5 minutes
    │
    ├─▶ HTTP POST to MC Query Service
    │   URL: /api/v1/players
@@ -345,17 +346,19 @@ MC Query Service → Redis (DOWN)
            Continue without cache (degraded mode)
 ```
 
-### Scenario 3: DynamoDB Throttling
+### Scenario 3: Session Cache Unavailable (Redis Down for Sessions)
 ```
-Bot Handler → DynamoDB Write (THROTTLED)
+Bot Handler → Redis Write (session) (FAILED)
                 ↓
-           SDK Automatic Retry (exponential backoff)
+           Continue without session storage
                 ↓
-           If still failing after 3 retries:
+           User gets response immediately
                 ↓
-           Log error, continue without persistence
+           Tradeoff: Callback buttons won't work
                 ↓
-           User still gets response (state lost)
+           User can re-run command if needed
+                ↓
+           No impact on core /status and /players commands
 ```
 
 ## Security Architecture
@@ -376,32 +379,29 @@ ALB (Security Group: 443 from API Gateway only)
 ECS Tasks (Private Subnet)
    │ Security Group:
    │ - Inbound: 8080 from ALB only
-   │ - Outbound: 443 (Telegram API), 6379 (Redis), 443 (DynamoDB)
+   │ - Outbound: 443 (Telegram API), 6379 (Redis)
    │
-   ├─▶ ElastiCache (Security Group: 6379 from ECS only)
-   └─▶ DynamoDB (VPC Endpoint, no internet)
+   └─▶ ElastiCache (Security Group: 6379 from ECS only)
 ```
 
 ### IAM Roles
 
-**ECS Task Role (Bot Handler):**
+**ECS Task Role (Bot Handler) - Cost-Optimized:**
 ```json
 {
   "Effect": "Allow",
   "Action": [
-    "dynamodb:GetItem",
-    "dynamodb:PutItem",
-    "dynamodb:UpdateItem",
     "secretsmanager:GetSecretValue",
     "logs:CreateLogStream",
     "logs:PutLogEvents",
     "xray:PutTraceSegments"
   ],
   "Resource": [
-    "arn:aws:dynamodb:*:*:table/user_sessions",
     "arn:aws:secretsmanager:*:*:secret/bot-token-*"
   ]
 }
+```
+Note: DynamoDB permissions removed - no persistent storage needed
 ```
 
 **ECS Task Role (MC Query Service):**
@@ -419,6 +419,7 @@ ECS Tasks (Private Subnet)
 
 ## Cost Estimation (Monthly)
 
+### Standard Architecture (With Session Storage)
 **Assumptions:** 10,000 users, 50,000 commands/day
 
 | Service | Usage | Cost |
@@ -433,10 +434,35 @@ ECS Tasks (Private Subnet)
 | **Secrets Manager** | 2 secrets, 50K API calls | $1 |
 | **Total** | | **~$118/month** |
 
-**Cost Optimization:**
-- Use Fargate Spot for non-critical workloads: **-70% on compute**
-- Reserved capacity for ElastiCache: **-30%**
-- S3 for log archival: **-80% on storage**
+### **Cost-Optimized Architecture (Recommended)** 💰
+**Eliminates unnecessary storage, stateless operation**
+
+| Service | Usage | Cost | Savings |
+|---------|-------|------|---------|
+| **ECS Fargate (Spot)** | 2 services, avg 2 tasks (0.25 vCPU, 0.5GB RAM) | $15 | -70% |
+| **ALB** | Removed - API Gateway only | $0 | -100% |
+| **DynamoDB** | **Eliminated** - stateless callbacks | $0 | -100% |
+| **ElastiCache** | cache.t4g.micro (0.5GB) ARM | $8 | -33% |
+| **API Gateway** | 1.5M requests | $5 | - |
+| **CloudWatch** | Logs (5GB, 7-day retention), basic metrics | $5 | -67% |
+| **Data Transfer** | 50GB outbound | $5 | - |
+| **Secrets Manager** | 2 secrets, 50K API calls | $1 | - |
+| **Total** | | **~$39/month** | **-67% savings** |
+
+### Cost Optimization Strategies
+
+**Immediate (Implemented in Cost-Optimized Architecture):**
+- ✅ **Remove DynamoDB**: Use in-memory session cache (Redis) with TTL - callbacks work for recent queries only
+- ✅ **Remove ALB**: API Gateway is sufficient for webhook traffic
+- ✅ **Use Fargate Spot**: 70% discount for non-critical workloads
+- ✅ **Reduce CloudWatch retention**: 7 days instead of 30 days
+- ✅ **Right-size instances**: 0.25 vCPU instead of 0.5 vCPU per task
+- ✅ **Use ARM processors**: T4g instances are 20-30% cheaper than T3
+
+**Additional Savings (Optional):**
+- Use Lambda instead of Fargate for Bot Handler: **-50% on compute** (~$25/mo total)
+- Reduce ElastiCache to cache.t4g.nano (0.25GB): **-50% on cache** (~$32/mo total)
+- Move to free tier services if under 1M requests/month: **$0/month**
 
 ## Deployment Strategy (Future)
 

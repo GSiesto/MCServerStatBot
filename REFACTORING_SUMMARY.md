@@ -28,27 +28,33 @@ A **Telegram bot** that checks Minecraft server status and shows connected playe
 ```
 Telegram Users
      ↓
-API Gateway / ALB
+API Gateway (no ALB needed)
      ↓
 ┌────────────────────────────────────────┐
-│          ECS Fargate / EKS             │
+│     ECS Fargate Spot (Cost-Optimized) │
 │  ┌──────────────┐  ┌────────────────┐ │
 │  │ Bot Handler  │→ │ MC Query       │ │
 │  │   Service    │  │   Service      │ │
 │  └──────────────┘  └────────────────┘ │
 └────────────────────────────────────────┘
-     ↓         ↓         ↓
-  DynamoDB  ElastiCache  SQS
-  (state)   (Redis)     (async)
+              ↓
+         ElastiCache (Redis)
+         (MC cache + sessions)
 ```
 
-### Key AWS Services
-- **ECS Fargate**: Container orchestration
-- **DynamoDB**: Session state storage
-- **ElastiCache (Redis)**: MC query caching (30-60s TTL)
-- **API Gateway/ALB**: Webhook endpoint
+### Key AWS Services (Cost-Optimized)
+- **ECS Fargate Spot**: Container orchestration (70% discount)
+- **ElastiCache (Redis)**: MC query caching (30-60s TTL) + session state (5-min TTL)
+- **API Gateway**: Webhook endpoint (no ALB needed)
 - **Secrets Manager**: Bot tokens
-- **CloudWatch**: Logs, metrics, alarms
+- **CloudWatch**: Logs (7-day retention), metrics, alarms
+
+**Cost Savings:**
+- ❌ **DynamoDB removed**: Not needed for stateless operation (-$5/month)
+- ❌ **ALB removed**: API Gateway sufficient (-$25/month)
+- ✅ **Fargate Spot**: 70% cheaper than on-demand (-$35/month)
+- ✅ **Right-sized instances**: 0.25 vCPU vs. 0.5 vCPU (-$10/month)
+- **Total: ~$39/month (67% savings vs. $118/month)**
 
 ## 🚀 Modernized Tech Stack
 
@@ -84,7 +90,7 @@ API Gateway / ALB
 
 ### Phase 3: Containerization (1-2 weeks) - **MEDIUM**
 - ✅ Dockerfile + docker-compose
-- ✅ Local dev environment (Redis, DynamoDB Local)
+- ✅ Local dev environment (Redis for caching + sessions)
 - ✅ Configuration management
 - ✅ Health check endpoints
 
@@ -96,8 +102,8 @@ API Gateway / ALB
 - ✅ Structured logging + correlation IDs
 
 ### Phase 5: AWS Integration (2-3 weeks) - **HIGH**
-- ✅ DynamoDB session storage
-- ✅ ElastiCache Redis
+- ✅ Redis for both MC caching and session state (cost-optimized)
+- ✅ ElastiCache with ARM-based t4g instances (33% cheaper)
 - ✅ Secrets Manager
 - ✅ CloudWatch Logs + Metrics
 - ✅ ECS task definitions
@@ -128,7 +134,7 @@ MCServerStatBot/
 │       │   └── services/     # Query logic + cache
 │       └── tests/
 ├── shared/common/            # Shared utilities
-│   └── aws/                  # DynamoDB, Secrets, CloudWatch
+│   └── aws/                  # Secrets Manager, CloudWatch
 ├── docker-compose.yml
 ├── .github/workflows/        # CI/CD
 └── REFACTORING_PLAN.md       # Full details

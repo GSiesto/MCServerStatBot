@@ -127,7 +127,7 @@
 - [ ] Create `SessionRepository` interface (Protocol)
 - [ ] Implement `FileSessionRepository` (current behavior)
 - [ ] Methods: `get()`, `save()`, `delete()`
-- [ ] Design for future DynamoDB implementation
+- [ ] Design for Redis session storage (cost-optimized, no DynamoDB needed)
 
 ### 2.5 Error Handling Refactor
 - [ ] Create custom exception hierarchy:
@@ -182,8 +182,7 @@
 ### 3.2 Docker Compose Setup
 - [ ] Create `docker-compose.yml`
   - [ ] Bot service
-  - [ ] Redis container
-  - [ ] DynamoDB Local container
+  - [ ] Redis container (for MC cache + sessions)
 - [ ] Configure environment variables
 - [ ] Set up volume mounts for development
 - [ ] Test: `docker-compose up`
@@ -199,7 +198,6 @@
 - [ ] Add `/health` endpoint (liveness probe)
 - [ ] Add `/ready` endpoint (readiness probe)
 - [ ] Check Redis connection
-- [ ] Check DynamoDB connection
 
 ### 3.5 Local Development Scripts
 - [ ] Create `scripts/local_dev.sh`
@@ -216,7 +214,7 @@
 ### 3.7 Milestone 3 Completion
 - [ ] Bot runs in Docker container
 - [ ] `docker-compose up` starts all services
-- [ ] Redis and DynamoDB Local functional
+- [ ] Redis functional for caching and sessions
 - [ ] Health check endpoints return 200 OK
 - [ ] Hot reload works in development
 - [ ] Create PR and merge to main
@@ -300,15 +298,16 @@
 - [ ] Configure IAM role-based auth (not credentials)
 - [ ] Test locally with AWS credentials
 
-### 5.2 DynamoDB Integration
-- [ ] Design DynamoDB table schema:
-  - [ ] Table: `user_sessions`
-  - [ ] Partition Key: `chat_id`
-  - [ ] Attributes: `last_url`, `last_query_time`, `server_data`, `ttl`
-- [ ] Implement `DynamoDBSessionRepository`
-- [ ] Create migration script from file to DynamoDB
-- [ ] Test with DynamoDB Local
-- [ ] Test with real DynamoDB (dev account)
+### 5.2 Redis Session Storage (Cost-Optimized)
+- [ ] Implement session caching in Redis:
+  - [ ] Key pattern: `session:{chat_id}`
+  - [ ] Value: `{last_url, query_time}`
+  - [ ] TTL: 300 seconds (5 minutes)
+- [ ] Test session storage locally
+- [ ] Test with ElastiCache (dev account)
+- [ ] Verify callback buttons work for recent queries
+
+**Note:** DynamoDB skipped for cost optimization (-$5+/month savings)
 
 ### 5.3 Redis/ElastiCache Integration
 - [ ] Update cache client for ElastiCache compatibility
@@ -375,14 +374,15 @@
 - [ ] Test failover scenarios
 
 ### 5.11 Milestone 5 Completion
-- [ ] Bot stores state in DynamoDB
-- [ ] MC queries cached in Redis
+- [ ] Session state cached in Redis (5-min TTL)
+- [ ] MC queries cached in Redis (30-60s TTL)
 - [ ] All secrets from Secrets Manager
 - [ ] Logs flow to CloudWatch Logs
 - [ ] Custom metrics in CloudWatch
 - [ ] Webhook mode functional with HTTPS
 - [ ] Documentation complete
 - [ ] Production-ready Docker images
+- [ ] Cost-optimized: ~$39/month achieved
 - [ ] Create PR and merge to main
 - [ ] Tag release: `git tag v1.0.0-aws-ready`
 
@@ -435,8 +435,8 @@
 ### Architecture
 - [ ] Microservices deployed independently
 - [ ] Services communicate via HTTP/REST
-- [ ] State stored in DynamoDB
-- [ ] Caching implemented in Redis
+- [ ] Session state and MC cache in Redis (cost-optimized, no DynamoDB)
+- [ ] Caching reduces MC queries by >80%
 - [ ] Secrets managed in AWS Secrets Manager
 
 ### Operations
