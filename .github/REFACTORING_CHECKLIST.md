@@ -222,7 +222,87 @@
 
 ---
 
-## 📋 Milestone 4: AWS-Ready Microservices Split (2-3 weeks)
+## 📋 Milestone 4: Serverless Lambda Functions (1-2 weeks) ⭐ RECOMMENDED
+
+**Goal:** Deploy to AWS Lambda for near-zero cost (~$0.93/month)
+
+### 4.1 Lambda Function Setup
+- [ ] Create Lambda project structure:
+  - [ ] `lambda/bot_handler/`
+  - [ ] `lambda/mc_query/`
+  - [ ] `lambda/layers/dependencies/`
+- [ ] Set up AWS SAM or Terraform for IaC
+
+### 4.2 Bot Handler Lambda
+- [ ] Create Lambda handler function (`handler.py`)
+- [ ] Integrate python-telegram-bot library
+- [ ] Parse API Gateway event (webhook payload)
+- [ ] Implement command routing logic
+- [ ] Invoke MC Query Lambda (boto3 lambda.invoke())
+- [ ] Format responses for Telegram
+- [ ] Session caching in environment variables (ephemeral)
+- [ ] Unit tests for handler
+
+### 4.3 MC Query Lambda
+- [ ] Create Lambda handler function (`handler.py`)
+- [ ] Implement mcstatus server query logic
+- [ ] In-memory caching (module-level globals)
+- [ ] Timeout handling (5 seconds)
+- [ ] Error handling and retry logic
+- [ ] Return structured JSON response
+- [ ] Unit tests for handler
+
+### 4.4 Lambda Layers
+- [ ] Create shared dependencies layer:
+  - [ ] python-telegram-bot
+  - [ ] mcstatus
+  - [ ] requests
+  - [ ] pydantic
+- [ ] Build layer package (requirements.txt → ZIP)
+- [ ] Deploy layer to AWS
+- [ ] Attach layer to both Lambda functions
+
+### 4.5 API Gateway Setup
+- [ ] Create REST API in API Gateway
+- [ ] Create POST /webhook endpoint
+- [ ] Configure Lambda proxy integration
+- [ ] Set up request validation
+- [ ] Configure rate limiting (10 req/sec per IP)
+- [ ] Test webhook with curl
+
+### 4.6 Local Testing
+- [ ] Install AWS SAM CLI
+- [ ] Test Lambdas locally: `sam local invoke`
+- [ ] Test API Gateway locally: `sam local start-api`
+- [ ] Create test events for webhook payloads
+- [ ] Verify cold start time (<1 second)
+
+### 4.7 Deployment & Testing
+- [ ] Deploy both Lambda functions to AWS
+- [ ] Deploy API Gateway
+- [ ] Configure Telegram webhook URL
+- [ ] Integration test with real Telegram bot
+- [ ] Load test to verify free tier coverage
+- [ ] Monitor CloudWatch Logs
+
+### 4.8 Milestone 4 Completion
+- [ ] Both Lambda functions deployed
+- [ ] API Gateway triggers Bot Handler Lambda
+- [ ] MC Query Lambda invoked successfully
+- [ ] In-memory caching functional
+- [ ] CloudWatch Logs show invocations
+- [ ] Cost within free tier (~$0.93/month)
+- [ ] Cold start <1 second, warm <100ms
+- [ ] Create PR and merge to main
+- [ ] Tag release: `git tag v0.4.0-milestone-4-lambda`
+
+---
+
+## 📋 Alternative Milestone 4: Container-Based Microservices (2-3 weeks)
+
+**Use only if:** Lambda limits exceeded (>1M req/month) or specific container needs
+
+**Cost:** ~$39/month vs. $0.93/month for Lambda
 
 ### 4.1 Service Separation
 - [ ] Define OpenAPI spec for MC Query Service

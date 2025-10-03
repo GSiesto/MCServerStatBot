@@ -28,33 +28,45 @@ A **Telegram bot** that checks Minecraft server status and shows connected playe
 ```
 Telegram Users
      ↓
-API Gateway (no ALB needed)
+API Gateway
      ↓
 ┌────────────────────────────────────────┐
-│     ECS Fargate Spot (Cost-Optimized) │
+│    AWS Lambda (Serverless)             │
 │  ┌──────────────┐  ┌────────────────┐ │
 │  │ Bot Handler  │→ │ MC Query       │ │
-│  │   Service    │  │   Service      │ │
+│  │   Lambda     │  │   Lambda       │ │
 │  └──────────────┘  └────────────────┘ │
+│  (Event-driven, auto-scale, $0 idle)  │
 └────────────────────────────────────────┘
-              ↓
-         ElastiCache (Redis)
-         (MC cache + sessions)
+       In-memory cache (ephemeral)
 ```
 
-### Key AWS Services (Cost-Optimized)
-- **ECS Fargate Spot**: Container orchestration (70% discount)
-- **ElastiCache (Redis)**: MC query caching (30-60s TTL) + session state (5-min TTL)
-- **API Gateway**: Webhook endpoint (no ALB needed)
-- **Secrets Manager**: Bot tokens
-- **CloudWatch**: Logs (7-day retention), metrics, alarms
+### Key AWS Services (Serverless - RECOMMENDED)
+- **AWS Lambda**: Compute (2 functions) - $0 within free tier (1M req/month)
+- **API Gateway**: Webhook endpoint - $0 within free tier first 12 months
+- **Secrets Manager**: Bot tokens - $0.43/month
+- **CloudWatch**: Logs, metrics - $0 within free tier (5GB/month)
 
-**Cost Savings:**
-- ❌ **DynamoDB removed**: Not needed for stateless operation (-$5/month)
-- ❌ **ALB removed**: API Gateway sufficient (-$25/month)
-- ✅ **Fargate Spot**: 70% cheaper than on-demand (-$35/month)
-- ✅ **Right-sized instances**: 0.25 vCPU vs. 0.5 vCPU (-$10/month)
-- **Total: ~$39/month (67% savings vs. $118/month)**
+**Total Cost: ~$0.93/month** 🎯
+
+**Cost Breakdown:**
+- Lambda: $0 (within 1M request/month free tier)
+- API Gateway: $0.50 (500K requests beyond 1M free tier) 
+- Secrets Manager: $0.43 ($0.40 storage + API calls)
+- CloudWatch: $0 (within 5GB free tier)
+- Data Transfer: $0 (within 100GB free tier)
+
+**After 12-month free tier (API Gateway):** ~$5.43/month
+
+**Eliminated Services (Massive Savings):**
+- ❌ **ECS Fargate removed**: Lambda replaces containers (-$15/month)
+- ❌ **ElastiCache removed**: Lambda in-memory cache sufficient (-$8/month)
+- ❌ **DynamoDB removed**: Stateless operation (-$5/month)
+- ❌ **ALB removed**: API Gateway handles routing (-$25/month)
+
+**Alternative: ECS Fargate (~$39/month)**
+- Use if traffic exceeds 1M requests/month consistently
+- Or if specific container requirements exist
 
 ## 🚀 Modernized Tech Stack
 
@@ -94,22 +106,26 @@ API Gateway (no ALB needed)
 - ✅ Configuration management
 - ✅ Health check endpoints
 
-### Phase 4: Microservices Split (2-3 weeks) - **HIGH**
-- ✅ Bot Handler Service (FastAPI + PTB)
-- ✅ MC Query Service (FastAPI + mcstatus)
-- ✅ Redis caching layer
-- ✅ HTTP API between services
-- ✅ Structured logging + correlation IDs
+### Phase 4: Serverless Lambda Functions (1-2 weeks) - **MEDIUM** ⭐ RECOMMENDED
+- ✅ Bot Handler Lambda + MC Query Lambda
+- ✅ API Gateway integration
+- ✅ Lambda layers for dependencies
+- ✅ In-memory caching (ephemeral)
+- ✅ CloudWatch Logs integration
+- ✅ **Cost: ~$0.93/month** (within free tier)
 
-### Phase 5: AWS Integration (2-3 weeks) - **HIGH**
-- ✅ Redis for both MC caching and session state (cost-optimized)
-- ✅ ElastiCache with ARM-based t4g instances (33% cheaper)
-- ✅ Secrets Manager
-- ✅ CloudWatch Logs + Metrics
+**Alternative:** Container-based microservices (2-3 weeks, ~$39/month) if Lambda limits exceeded
+
+### Phase 5: AWS Integration (1-2 weeks) - **MEDIUM**
+- ✅ Secrets Manager integration
+- ✅ CloudWatch Logs + custom metrics
+- ✅ API Gateway webhook setup
+- ✅ Lambda deployment automation (SAM/Terraform)
 - ✅ ECS task definitions
 - ✅ Deployment documentation
 
-**Total Estimated Effort**: 8-13 weeks (2-3 months)
+**Total Estimated Effort**: 6-10 weeks (1.5-2.5 months) for serverless architecture
+*Alternative: 8-13 weeks for container-based architecture*
 
 ## 📁 New Directory Structure
 

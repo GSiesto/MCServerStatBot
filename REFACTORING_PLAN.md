@@ -142,29 +142,58 @@ The application follows a **monolithic architecture** with three Python modules:
 
 #### Architecture Components Detail
 
-**1. Bot Handler Service (ECS Fargate)**
+**RECOMMENDED: Serverless Architecture with AWS Lambda (~$0.93/month)**
+
+**1. Bot Handler Lambda Function**
 - **Purpose**: Telegram webhook receiver and command orchestrator
-- **Technology**: Python 3.12, FastAPI for webhook handling, python-telegram-bot 20.x
+- **Technology**: Python 3.12, python-telegram-bot 20.x, Lambda runtime
+- **Configuration**:
+  - Memory: 512 MB
+  - Timeout: 30 seconds
+  - Runtime: Python 3.12
+  - Concurrency: Auto-scaling (0 to 1000+)
 - **Responsibilities**:
-  - Receive and validate Telegram webhook events
+  - Receive and validate Telegram webhook events (triggered by API Gateway)
   - Parse commands and route to appropriate handlers
-  - Call Minecraft Query Service via HTTP/gRPC
+  - Invoke MC Query Lambda for server queries
   - Format and send responses back to Telegram
   - Handle callback queries (inline buttons)
-- **Scaling**: Horizontal auto-scaling based on CPU/memory or request count
-- **State**: Stateless (stores nothing locally), retrieves recent session state from Redis cache (5-min TTL)
+- **Scaling**: Automatic, event-driven (0 to 1000+ concurrent executions)
+- **State**: Stateless with ephemeral cache in Lambda memory (warm containers ~5-15 min)
+- **Cost**: $0 within free tier (1M requests/month)
 
-**2. Minecraft Query Service (ECS Fargate)**
-- **Purpose**: Isolated service for querying Minecraft servers
-- **Technology**: Python 3.12, FastAPI/gRPC, mcstatus library, async I/O
+**2. MC Query Lambda Function**
+- **Purpose**: Isolated function for querying Minecraft servers
+- **Technology**: Python 3.12, mcstatus library, async I/O
+- **Configuration**:
+  - Memory: 512 MB
+  - Timeout: 10 seconds
+  - Runtime: Python 3.12
+  - Concurrency: Auto-scaling
 - **Responsibilities**:
   - Execute Minecraft server status/query operations
-  - Implement connection pooling and timeout management
-  - Cache results in Redis (TTL: 30-60 seconds)
-  - Handle retries with exponential backoff
-  - Provide health check endpoints
-- **Scaling**: Horizontal auto-scaling based on queue depth or latency
-- **Benefits**: Isolates network I/O from bot handler, prevents bot blocking
+  - Implement timeout management and retry logic
+  - Cache results in Lambda memory (ephemeral, 30-60s while warm)
+  - Handle errors and timeouts gracefully
+- **Scaling**: Automatic based on invocation rate
+- **Benefits**: 
+  - No idle costs (pay per invocation only)
+  - Built-in fault tolerance and HA
+  - Eliminates need for Redis (ephemeral cache sufficient)
+  - ~$0/month within free tier
+
+**ALTERNATIVE: Container-Based Architecture (ECS Fargate - ~$39/month)**
+*For higher traffic or specific container requirements*
+
+**1. Bot Handler Service (ECS Fargate)**
+- Similar to Lambda but runs as container
+- Always-on compute costs vs. per-request
+- Use when: >1M requests/month or need custom runtime
+
+**2. Minecraft Query Service (ECS Fargate)**
+- Similar to Lambda but runs as container
+- Requires ElastiCache for caching
+- Use when: sustained high traffic or complex dependencies
 
 **3. Data Storage (Cost-Optimized Architecture)**
 
@@ -581,64 +610,91 @@ MCServerStatBot/
 
 ---
 
-### Milestone 4: AWS-Ready Microservices Split
-**Complexity**: High  
-**Estimated Effort**: 2-3 weeks  
-**Goal**: Split monolith into two services optimized for AWS deployment
+### Milestone 4: Serverless Lambda Functions (RECOMMENDED - ~$0.93/month)
+**Complexity**: Medium  
+**Estimated Effort**: 1-2 weeks  
+**Goal**: Create AWS Lambda functions for near-zero cost operation
 
 #### Tasks:
-1. **Service Separation**
-   - **Bot Handler Service**: Webhook receiver, command router
-   - **MC Query Service**: Minecraft server querying, caching
-   - Define HTTP API contract between services (OpenAPI spec)
+1. **Lambda Function Structure**
+   - **Bot Handler Lambda**: Webhook receiver, command router
+   - **MC Query Lambda**: Minecraft server querying
+   - Define invocation contract (synchronous Lambda invoke)
    
-2. **Bot Handler Service**
-   - FastAPI app with webhook endpoint
-   - Integrate python-telegram-bot with FastAPI
-   - HTTP client to call MC Query Service
-   - Session state stored in DynamoDB (not implemented yet, use Redis)
-   - Health check endpoint
+2. **Bot Handler Lambda**
+   - Create Lambda handler function (Python 3.12)
+   - Integrate python-telegram-bot library
+   - Parse webhook events from API Gateway
+   - Invoke MC Query Lambda synchronously (boto3)
+   - Format and send responses to Telegram
+   - Session state in environment variables (ephemeral)
    
-3. **MC Query Service**
-   - FastAPI app with REST endpoints
-   - `/status` endpoint: Get server status
-   - `/players` endpoint: Get player list
-   - Redis caching layer (TTL: 30-60s)
-   - Connection pooling for Minecraft queries
-   - Health check endpoint
+3. **MC Query Lambda**
+   - Create Lambda handler function (Python 3.12)
+   - Implement mcstatus server queries
+   - In-memory caching (ephemeral, while Lambda warm)
+   - Timeout handling (5 seconds for MC query)
+   - Return structured response
    
-4. **Inter-Service Communication**
-   - HTTP client with retry logic
-   - Circuit breaker pattern (optional: use tenacity library)
-   - Request/response schemas with Pydantic
+4. **Lambda Layers**
+   - Create shared Lambda layer for dependencies:
+     - python-telegram-bot
+     - mcstatus
+     - requests, pydantic
+   - Reduces deployment package size
+   - Faster deployments
    
-5. **Observability**
-   - Structured JSON logging (prepare for CloudWatch)
-   - Log correlation IDs across services
-   - Custom metrics endpoints (Prometheus format)
-   - OpenTelemetry instrumentation (optional)
+5. **API Gateway Integration**
+   - Create REST API in API Gateway
+   - POST /webhook endpoint → Bot Handler Lambda
+   - Configure Lambda proxy integration
+   - Set up request validation
+   - Configure rate limiting
    
-6. **Testing**
-   - Unit tests for each service
-   - Integration tests with both services running
-   - Contract tests for API between services
-   - Load testing (locust or k6)
+6. **Observability**
+   - CloudWatch Logs (automatic for Lambda)
+   - Structured JSON logging
+   - Custom CloudWatch metrics
+   - X-Ray tracing (optional)
+   
+7. **Testing**
+   - Unit tests for Lambda handlers
+   - Local testing with Lambda runtime emulator
+   - Integration tests with API Gateway
+   - Load testing to verify free tier limits
 
 #### Success Criteria:
-- ✅ Two independent services run in separate containers
-- ✅ Services communicate via HTTP API
-- ✅ Redis caching reduces redundant MC queries by >80%
-- ✅ Each service has independent health check
-- ✅ Logs include correlation IDs for request tracing
-- ✅ Services can be deployed independently
+- ✅ Both Lambda functions deployed and functional
+- ✅ API Gateway triggers Bot Handler Lambda
+- ✅ MC Query Lambda invoked synchronously
+- ✅ In-memory caching reduces redundant queries
+- ✅ CloudWatch Logs show all invocations
+- ✅ Cost stays within free tier (~$0.93/month)
+- ✅ Cold start time <1 second
 
 #### Deliverables:
-- `services/bot_handler/` (complete service)
-- `services/mc_query_service/` (complete service)
-- `shared/common/` (shared utilities)
-- OpenAPI specs for MC Query Service
-- Load test scripts
-- Architecture documentation
+- `lambda/bot_handler/` (Lambda function code)
+- `lambda/mc_query/` (Lambda function code)
+- `lambda/layers/` (shared dependencies)
+- `lambda/deploy.sh` (deployment script)
+- SAM or Terraform templates (IaC)
+- Load test results showing free tier coverage
+
+---
+
+### Alternative Milestone 4: Container-Based Microservices (ECS Fargate - ~$39/month)
+**Use only if Lambda limits are exceeded or specific container requirements exist**
+**Complexity**: High  
+**Estimated Effort**: 2-3 weeks  
+
+#### When to use ECS instead of Lambda:
+- Traffic consistently exceeds 1M requests/month
+- Need custom system packages not available in Lambda
+- Execution time frequently exceeds 15 minutes
+- Require persistent connections or long-running processes
+
+#### Tasks: (Original Milestone 4 structure)
+Same as Lambda milestone but with FastAPI containers, ElastiCache Redis, and ECS orchestration
 
 ---
 

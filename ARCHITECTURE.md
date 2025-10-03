@@ -4,6 +4,96 @@
 
 ## High-Level Architecture Overview
 
+### **Serverless Architecture (RECOMMENDED - ~$0.93/month)**
+
+```
+                                    ┌─────────────────────────┐
+                                    │   Telegram Platform     │
+                                    │   (External Service)    │
+                                    └───────────┬─────────────┘
+                                                │
+                                                │ HTTPS Webhooks
+                                                │
+                                                ▼
+┌────────────────────────────────────────────────────────────────────────────┐
+│                              AWS Cloud                                     │
+│                                                                            │
+│  ┌──────────────────────────────────────────────────────────────────────┐ │
+│  │                            API Gateway                               │ │
+│  │                            (REST API)                                │ │
+│  │  - Webhook endpoint: POST /webhook                                  │ │
+│  │  - Rate limiting: 10 req/sec per IP                                 │ │
+│  │  - Request validation & throttling                                  │ │
+│  │  - SSL/TLS termination                                              │ │
+│  │  - Lambda integration (direct invocation)                           │ │
+│  └────────────────────────────────┬─────────────────────────────────────┘ │
+│                                   │                                       │
+│                                   ▼                                       │
+│  ┌──────────────────────────────────────────────────────────────────────┐ │
+│  │                      Serverless Compute Layer                        │ │
+│  │                                                                      │ │
+│  │  ┌────────────────────────────────┐    ┌──────────────────────────┐│ │
+│  │  │   Bot Handler Lambda           │    │  MC Query Lambda         ││ │
+│  │  │   Runtime: Python 3.12         │    │  Runtime: Python 3.12    ││ │
+│  │  │   Memory: 512 MB               │    │  Memory: 512 MB          ││ │
+│  │  │   Timeout: 30 seconds          │    │  Timeout: 10 seconds     ││ │
+│  │  │                                │    │                          ││ │
+│  │  │  ┌──────────────────────────┐ │    │  ┌────────────────────┐  ││ │
+│  │  │  │ Python-Telegram-Bot 20.x │ │    │  │  mcstatus Library  │  ││ │
+│  │  │  │ - Command Handlers       │ │    │  │  - Server Query    │  ││ │
+│  │  │  │ - Callback Handlers      │ │    │  │  - Retry Logic     │  ││ │
+│  │  │  │ - Message Formatting     │ │    │  └────────────────────┘  ││ │
+│  │  │  └──────────────────────────┘ │    │                          ││ │
+│  │  │                                │    │  ┌────────────────────┐  ││ │
+│  │  │  ┌──────────────────────────┐ │    │  │  In-Memory Cache   │  ││ │
+│  │  │  │ Lambda Layer:            │ │    │  │  - MC query cache  │  ││ │
+│  │  │  │ - Shared dependencies    │ │    │  │  - TTL: 30-60s     │  ││ │
+│  │  │  │ - python-telegram-bot    │ │    │  │  - Ephemeral       │  ││ │
+│  │  │  │ - requests, pydantic     │ │    │  └────────────────────┘  ││ │
+│  │  │  └──────────────────────────┘ │    │                          ││ │
+│  │  │                                │    │  Session Cache:          ││ │
+│  │  │  Session Cache:                │    │  - Environment vars      ││ │
+│  │  │  - Lambda env variables        │    │  - 5-min warmup window   ││ │
+│  │  │  - 5-min function warmup       │    │                          ││ │
+│  │  │                                │    │                          ││ │
+│  │  │  Invocation: Event-driven     │    │  Invocation: HTTP/invoke ││ │
+│  │  │  Concurrency: Auto-scale 0-1K │    │  Concurrency: Auto-scale ││ │
+│  │  └────────────────────────────────┘    └──────────────────────────┘│ │
+│  │                                                                      │ │
+│  │  Key Benefits:                                                       │ │
+│  │  ✅ Near-zero cost (~$0.93/month within free tier)                  │ │
+│  │  ✅ Auto-scaling from 0 to 1000+ concurrent executions              │ │
+│  │  ✅ No idle costs - pay only for actual requests                    │ │
+│  │  ✅ No container management or server maintenance                   │ │
+│  │  ✅ Built-in HA and fault tolerance across AZs                      │ │
+│  └──────────────────────────────────────────────────────────────────────┘ │
+│                                                                            │
+│  ┌──────────────────────────────────────────────────────────────────────┐ │
+│  │                      Security & Secrets                              │ │
+│  │                                                                      │ │
+│  │  ┌──────────────────┐  ┌──────────────┐                            │ │
+│  │  │ Secrets Manager  │  │ IAM Roles    │                            │ │
+│  │  │ - Bot Token      │  │ - Lambda     │                            │ │
+│  │  │ - API Keys       │  │ - Execute    │                            │ │
+│  │  │ Auto-Rotation    │  │ - Logs       │                            │ │
+│  │  └──────────────────┘  └──────────────┘                            │ │
+│  └──────────────────────────────────────────────────────────────────────┘ │
+│                                                                            │
+│  ┌──────────────────────────────────────────────────────────────────────┐ │
+│  │                    Observability Layer                               │ │
+│  │                                                                      │ │
+│  │  ┌──────────────────┐  ┌──────────────┐  ┌─────────────────┐      │ │
+│  │  │ CloudWatch Logs  │  │ CloudWatch   │  │ AWS X-Ray       │      │ │
+│  │  │ - Auto-created   │  │ Metrics      │  │ - Optional      │      │ │
+│  │  │ - 7-day retain   │  │ - Built-in   │  │ - Tracing       │      │ │
+│  │  └──────────────────┘  └──────────────┘  └─────────────────┘      │ │
+│  └──────────────────────────────────────────────────────────────────────┘ │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+### **Alternative: ECS Fargate Architecture (~$39/month)**
+**For higher traffic or specific container requirements**
+
 ```
                                     ┌─────────────────────────┐
                                     │   Telegram Platform     │
@@ -33,14 +123,6 @@
 │  │                            │   - SSL/TLS Termination  │            │ │
 │  │                            └──────────┬───────────────┘            │ │
 │  └───────────────────────────────────────┼──────────────────────────────┘ │
-│                                           │                                │
-│                  ┌────────────────────────┼────────────────────────┐       │
-│                  │                        │                        │       │
-│                  │  Application Load Balancer (ALB) - Alternative  │       │
-│                  │  - Target Group Routing                         │       │
-│                  │  - Health Checks                                │       │
-│                  │  - Sticky Sessions (if needed)                  │       │
-│                  └────────────────────────┬────────────────────────┘       │
 │                                           │                                │
 │  ┌──────────────────────────────────────────────────────────────────────┐ │
 │  │                      Compute Layer (ECS Fargate)                     │ │
@@ -176,7 +258,7 @@
 
 ## Request Flow Diagram
 
-### User Command Flow: `/status minecraft.server.com`
+### Serverless Flow: `/status minecraft.server.com`
 
 ```
 1. User sends command
@@ -185,47 +267,52 @@
 2. Telegram Platform
    │ (webhook POST)
    ▼
-3. API Gateway / ALB
-   │ (request validation, SSL termination)
+3. API Gateway
+   │ (request validation, SSL termination, rate limiting)
    ▼
-4. Bot Handler Service (ECS)
+4. Bot Handler Lambda (invoked)
+   │ Cold start: <1 second (first invocation)
+   │ Warm: <10ms (subsequent invocations)
    │
    ├─▶ Parse command
    │   Extract URL: "minecraft.server.com"
    │
-   ├─▶ HTTP POST to MC Query Service
-   │   URL: http://mc-query-service/api/v1/status
-   │   Body: {"server_url": "minecraft.server.com"}
+   ├─▶ Invoke MC Query Lambda (synchronous)
+   │   Payload: {"server_url": "minecraft.server.com"}
    │   │
    │   ▼
-   │   MC Query Service (ECS)
+   │   MC Query Lambda (invoked)
    │   │
-   │   ├─▶ Check Redis cache
-   │   │   Key: mc:server:minecraft.server.com:status
-   │   │   Cache HIT → Return cached data (30s TTL)
+   │   ├─▶ Check in-memory cache (Lambda container warmup)
+   │   │   Key: minecraft.server.com:status
+   │   │   Cache HIT → Return cached data (if Lambda warm + <30s old)
    │   │
-   │   └─▶ If cache MISS:
+   │   └─▶ If cache MISS or Lambda cold:
    │       ├─▶ Query Minecraft server (mcstatus)
    │       │   DNS lookup, TCP connection, protocol query
    │       │   Timeout: 5 seconds
    │       │
-   │       ├─▶ Store result in Redis (TTL: 30-60s)
+   │       ├─▶ Store result in Lambda memory (ephemeral cache)
+   │       │   TTL: 30-60s (expires when Lambda container recycles)
    │       │
-   │       └─▶ Return response
+   │       └─▶ Return response to Bot Handler Lambda
    │
    ├─▶ Format response message
    │   "(ﾉ◕ヮ◕)ﾉ:･ﾟ✧\n✅ Online\nVersion: 1.20.1..."
    │
-   ├─▶ Cache session in Redis (optional, for callbacks)
-   │   Key: session:{chat_id}
-   │   Value: {last_url, query_time}
-   │   TTL: 300 seconds (5 minutes)
+   ├─▶ Cache session in Lambda environment variable (for callbacks)
+   │   Stored in warm Lambda container memory
+   │   Available for ~5-15 minutes while Lambda stays warm
+   │   Expires when Lambda container is recycled
    │
    └─▶ Send formatted message to Telegram API
        │
        ▼
 5. Telegram delivers to user
    With inline buttons: [Status] [Players] [About]
+   
+**Note:** Lambda execution time: ~1-3 seconds total
+**Cost per request:** ~$0.00002 (within free tier for first 1M requests)
 ```
 
 ### Callback Flow: User clicks [Players] button
@@ -434,35 +521,57 @@ Note: DynamoDB permissions removed - no persistent storage needed
 | **Secrets Manager** | 2 secrets, 50K API calls | $1 |
 | **Total** | | **~$118/month** |
 
-### **Cost-Optimized Architecture (Recommended)** 💰
-**Eliminates unnecessary storage, stateless operation**
+### **Serverless Architecture with AWS Lambda (RECOMMENDED)** 🎯
+**Near-zero cost using AWS Free Tier for low-traffic scenarios**
 
-| Service | Usage | Cost | Savings |
-|---------|-------|------|---------|
-| **ECS Fargate (Spot)** | 2 services, avg 2 tasks (0.25 vCPU, 0.5GB RAM) | $15 | -70% |
-| **ALB** | Removed - API Gateway only | $0 | -100% |
-| **DynamoDB** | **Eliminated** - stateless callbacks | $0 | -100% |
-| **ElastiCache** | cache.t4g.micro (0.5GB) ARM | $8 | -33% |
-| **API Gateway** | 1.5M requests | $5 | - |
-| **CloudWatch** | Logs (5GB, 7-day retention), basic metrics | $5 | -67% |
-| **Data Transfer** | 50GB outbound | $5 | - |
-| **Secrets Manager** | 2 secrets, 50K API calls | $1 | - |
-| **Total** | | **~$39/month** | **-67% savings** |
+| Service | Free Tier | Typical Usage (50K cmd/day) | Cost |
+|---------|-----------|------------------------------|------|
+| **Lambda** | 1M requests/mo, 400K GB-sec/mo | ~1.5M requests/mo (50K×30 days) | **$0** (within free tier) |
+| **API Gateway** | 1M requests/mo (12 months) | 1.5M requests/mo | **$0.50** (500K × $0.001) |
+| **ElastiCache** | None | **ELIMINATED** - Use Lambda caching | **$0** |
+| **CloudWatch Logs** | 5GB ingestion/mo | ~2GB/mo | **$0** (within free tier) |
+| **Secrets Manager** | First 30 days free | 2 secrets, 50K API calls | **$0.43** ($0.40 + $0.03) |
+| **Data Transfer** | 100GB/mo | ~5GB/mo | **$0** (within free tier) |
+| **Total** | | | **~$0.93/month** 💰 |
 
-### Cost Optimization Strategies
+**After 12-month Free Tier expires (API Gateway):**
+- API Gateway: $5/month
+- **Total: ~$5.43/month** (still 95% cheaper than ECS)
 
-**Immediate (Implemented in Cost-Optimized Architecture):**
-- ✅ **Remove DynamoDB**: Use in-memory session cache (Redis) with TTL - callbacks work for recent queries only
-- ✅ **Remove ALB**: API Gateway is sufficient for webhook traffic
-- ✅ **Use Fargate Spot**: 70% discount for non-critical workloads
-- ✅ **Reduce CloudWatch retention**: 7 days instead of 30 days
-- ✅ **Right-size instances**: 0.25 vCPU instead of 0.5 vCPU per task
-- ✅ **Use ARM processors**: T4g instances are 20-30% cheaper than T3
+### **Alternative: ECS Fargate Architecture** (For comparison)
+**For higher traffic or if Lambda limits become a constraint**
 
-**Additional Savings (Optional):**
-- Use Lambda instead of Fargate for Bot Handler: **-50% on compute** (~$25/mo total)
-- Reduce ElastiCache to cache.t4g.nano (0.25GB): **-50% on cache** (~$32/mo total)
-- Move to free tier services if under 1M requests/month: **$0/month**
+| Service | Usage | Cost |
+|---------|-------|------|
+| **ECS Fargate (Spot)** | 2 services, 2 tasks (0.25 vCPU, 0.5GB) | $15 |
+| **ElastiCache** | cache.t4g.micro (0.5GB) ARM | $8 |
+| **API Gateway** | 1.5M requests | $5 |
+| **CloudWatch** | Logs (5GB, 7-day retention) | $5 |
+| **Data Transfer** | 50GB outbound | $5 |
+| **Secrets Manager** | 2 secrets, 50K API calls | $1 |
+| **Total** | | **~$39/month** |
+
+### Cost Optimization Strategy: Serverless-First
+
+**Why Lambda is Perfect for This Bot:**
+1. ✅ **Intermittent traffic** - Bot responds only when users send commands (not 24/7 load)
+2. ✅ **Low request volume** - 50K commands/day = ~1.5M requests/month (within Lambda free tier)
+3. ✅ **Short execution time** - Minecraft queries typically complete in 1-3 seconds
+4. ✅ **No cold start impact** - Telegram webhooks have 30+ second timeout, Lambda cold start (<1s) is acceptable
+5. ✅ **Built-in caching** - Lambda can cache Minecraft query results in memory between invocations
+6. ✅ **Auto-scaling** - Scales from 0 to 1000s of concurrent executions automatically
+7. ✅ **No idle costs** - Pay only for actual requests, not for 24/7 running containers
+
+**Lambda Free Tier Coverage:**
+- **1M requests/month**: Covers up to ~33K commands/day
+- **400,000 GB-seconds/month**: With 512MB memory and 2s avg execution = 800K requests/month
+- For 50K commands/day (1.5M/month), cost is minimal even beyond free tier
+
+**Eliminated Services (Serverless Benefits):**
+- ❌ **ElastiCache removed**: Lambda's ephemeral storage + in-memory caching sufficient
+- ❌ **ECS Fargate removed**: Lambda replaces container orchestration
+- ❌ **ALB removed**: API Gateway handles all routing
+- ❌ **DynamoDB removed**: Stateless operation with optional Lambda environment variables for short-term caching
 
 ## Deployment Strategy (Future)
 
