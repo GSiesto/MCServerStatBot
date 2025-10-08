@@ -4,3 +4,4 @@ persistent_data
 __pycache__
 .idea
 *.pyc
+.venv
