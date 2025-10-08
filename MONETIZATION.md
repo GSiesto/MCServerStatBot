@@ -16,7 +16,7 @@ transparent.
 | Variable | Description | Required | Default |
 | --- | --- | --- | --- |
 | `AFFILIATE_URL` | Tracking link to promote. | ✅ Yes | – |
-| `AFFILIATE_LABEL` | Link text shown to the user. | Optional | `Create your own server` |
+| `AFFILIATE_LABEL` | Link text shown to the user. | Optional | `Create your own MC server` |
 | `AFFILIATE_BLURB` | Short phrase that introduces the link. | Optional | Two-line default (`Sponsored by our hosting partner` / `Click to support the bot!`) |
 
 Set the variables before launching the bot, for example:
@@ -24,12 +24,12 @@ Set the variables before launching the bot, for example:
 ```bash
 # Linux/macOS
 export AFFILIATE_URL="URL"
-export AFFILIATE_LABEL="Create your own server"
+export AFFILIATE_LABEL="Create your own MC server"
 export AFFILIATE_BLURB=$'Sponsored by our hosting partner\nClick to support the bot!'
 
 # Windows PowerShell
 $env:AFFILIATE_URL = "URL"
-$env:AFFILIATE_LABEL = "Create your own server"
+$env:AFFILIATE_LABEL = "Create your own MC server"
 $env:AFFILIATE_BLURB = "Sponsored by our hosting partner`nClick to support the bot!"
 ```
 

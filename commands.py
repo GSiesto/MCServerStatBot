@@ -49,7 +49,7 @@ MESSAGE_CONTEXT_KEY = "message_context"
 MESSAGE_CONTEXT_ORDER_KEY = "message_context_order"
 MESSAGE_CONTEXT_LIMIT = 20
 
-DEFAULT_AFFILIATE_LABEL = "Create your own server"
+DEFAULT_AFFILIATE_LABEL = "Create your own MC server"
 DEFAULT_AFFILIATE_BLURB = "Sponsored by our hosting partner\nClick to support the bot!"
 
 DEVELOPER_CHANNEL_URL = "https://t.me/GSiesto"
@@ -95,6 +95,7 @@ class ServerSnapshot:
     players_max: int
     player_names: tuple[str, ...]
     query_available: bool
+    query_error: str | None
 
 
 # ==========================
@@ -255,6 +256,7 @@ async def _build_snapshot(address: str, *, include_query: bool) -> ServerSnapsho
 
     player_names: tuple[str, ...] = _extract_player_names_from_status(status)
     query_available = False
+    query_error: str | None = None
 
     if include_query:
         try:
@@ -264,7 +266,9 @@ async def _build_snapshot(address: str, *, include_query: bool) -> ServerSnapsho
                 player_names = tuple(sorted(str(name) for name in names))
             query_available = True
         except Exception as exc:  # pragma: no cover - network failures
-            logger.info("Query failed for %s: %s", address, exc)
+            query_error = f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
+            logger.info("Query failed for %s (%s)", address, query_error)
+            logger.debug("Query failure details for %s", address, exc_info=exc)
             query_available = False
 
     return ServerSnapshot(
@@ -277,6 +281,7 @@ async def _build_snapshot(address: str, *, include_query: bool) -> ServerSnapsho
         players_max=maximum,
         player_names=player_names,
         query_available=query_available,
+        query_error=query_error,
     )
 
 
@@ -320,30 +325,49 @@ def _status_message(snapshot: ServerSnapshot) -> str:
 
 def _players_message(snapshot: ServerSnapshot) -> str:
     safe_address = escape_markdown(snapshot.address, version=1)
+    header = (
+        "👥 *Players Online*\n"
+        f"🌐 `{safe_address}`\n"
+        f"🟢 Currently: {snapshot.players_online} / {snapshot.players_max} players"
+    )
 
-    if snapshot.query_available and snapshot.player_names:
+    if snapshot.player_names:
         formatted_names = _format_player_names(snapshot.player_names)
-        base = (
-            "👥 *Players Online*\n"
-            f"🌐 `{safe_address}`\n"
-            f"🟢 Currently: {len(snapshot.player_names)} players\n\n"
-            f"{formatted_names}"
-        )
-        return _message_with_affiliate_hint(base)
+        parts = [header, "", formatted_names]
+
+        if not snapshot.query_available:
+            parts.extend(
+                [
+                    "",
+                    "ℹ️ _Showing the limited sample returned by the status ping; the server may not expose its full player list._",
+                ]
+            )
+
+        return _message_with_affiliate_hint("\n".join(parts))
 
     return _players_fallback_message(snapshot)
 
 
 def _players_fallback_message(snapshot: ServerSnapshot) -> str:
     safe_address = escape_markdown(snapshot.address, version=1)
-    base = (
-        "👥 *Players Online*\n"
-        f"🌐 `{safe_address}`\n"
-        f"🟢 Currently: {snapshot.players_online} / {snapshot.players_max} players\n\n"
-        "⚠️ _This server has queries disabled, so individual player names aren't available._"
-    )
+    lines = [
+        "👥 *Players Online*",
+        f"🌐 `{safe_address}`",
+        f"🟢 Currently: {snapshot.players_online} / {snapshot.players_max} players",
+        "",
+        "⚠️ _This server has queries disabled, so individual player names aren't available._",
+    ]
 
-    return _message_with_affiliate_hint(base)
+    if snapshot.query_error:
+        safe_error = escape_markdown(snapshot.query_error, version=1)
+        lines.extend(
+            [
+                "",
+                f"ℹ️ _Query failed with:_ `{safe_error}`",
+            ]
+        )
+
+    return _message_with_affiliate_hint("\n".join(lines))
 
 
 async def _send_status_message(
