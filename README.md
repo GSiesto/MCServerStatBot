@@ -83,13 +83,13 @@ MCServerStatBot is a modern asyncio-based Telegram bot that checks the status of
 
 ## Commands
 
-- `/start` – display a quick introduction and inline buttons
+- `/start` – display a quick introduction and usage tips
 - `/status <host[:port]>` – fetch latency, MOTD, version and player counts
 - `/players <host[:port]>` – list online players (falls back to counts if the server disables queries)
 
 ## Notes
 
-- Inline buttons refresh the last server you requested in the current chat. If the bot restarts, run the command again before using the buttons.
+- Inline buttons appear on `/status` and `/players` results, refreshing the last server you requested in the current chat. If the bot restarts, run the command again before using the buttons.
 - Some servers disable the query protocol. In that case the bot will still show player counts, but not individual names.
 - Keep your `TELEGRAM_BOT_TOKEN` secret. Never commit it to version control.
 

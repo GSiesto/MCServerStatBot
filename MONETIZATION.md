@@ -37,7 +37,7 @@ $env:AFFILIATE_BLURB = "Sponsored by our hosting partner`nClick to support the b
 
 - The repository ships with monetization disabled. Simply omit `AFFILIATE_URL` to remove the CTA.
 - Documentation for the hosted bot explains that affiliate links help pay for uptime.
-- Forks are welcome to override or remove the feature—just keep the messaging honest so users know
+- Forks are welcome to override or remove the feature, just keep the messaging honest so users know
   when links support your infrastructure.
 
 If you monetize your fork, consider documenting who benefits from the referral revenue and how users

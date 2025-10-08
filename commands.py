@@ -13,7 +13,7 @@ import re
 from collections import deque
 from collections.abc import Sequence
 from typing import Any, cast
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from enum import Enum
 from functools import lru_cache
@@ -39,7 +39,7 @@ __all__ = [
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_TIMEOUT = 8.0  # seconds
+DEFAULT_TIMEOUT = 3.0  # seconds
 MAX_PLAYER_NAMES_DISPLAY = 25
 
 AFFILIATE_URL_ENV = "AFFILIATE_URL"
@@ -71,7 +71,7 @@ WELCOME_TEXT = (
     "*Try these commands:*\n"
     "• `/status play.example.com`\n"
     "• `/players play.example.com`\n\n"
-    "Use the buttons below for quick actions."
+    "Run those commands anytime, each result includes inline buttons for quick refreshes."
 )
 
 ABOUT_TEXT = (
@@ -352,11 +352,11 @@ def _players_message(snapshot: ServerSnapshot) -> str:
 def _players_fallback_message(snapshot: ServerSnapshot) -> str:
     safe_address = escape_markdown(snapshot.address, version=1)
     lines = [
-        "👥 *Players Online*",
-        f"🌐 `{safe_address}`",
+        "👥 Players Online",
+        f"🌐 {safe_address}",
         f"🟢 Currently: {snapshot.players_online} / {snapshot.players_max} players",
         "",
-        "⚠️ _This server has queries disabled, so individual player names aren't available._",
+        "⚠️ This server has queries disabled, so individual player names aren't available.",
     ]
 
     if snapshot.query_error:
@@ -364,7 +364,7 @@ def _players_fallback_message(snapshot: ServerSnapshot) -> str:
         lines.extend(
             [
                 "",
-                f"ℹ️ _Query failed with:_ `{safe_error}`",
+                f"ℹ️ Query failed with: {safe_error}",
             ]
         )
 
@@ -410,7 +410,6 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await _send_typing(context, chat_id)
     await update.message.reply_text(
         _message_with_affiliate_hint(WELCOME_TEXT),
-        reply_markup=build_main_keyboard(),
         disable_web_page_preview=True,
     )
 
@@ -497,12 +496,13 @@ async def cb_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle the 'Status' inline button press."""
     logger.info("Callback status called")
 
-    if not update.callback_query or not update.effective_chat:
+    query = update.callback_query
+    if not query or not update.effective_chat:
         return
 
-    message = update.callback_query.message
+    message = query.message
     if not message:
-        await update.callback_query.answer()
+        await query.answer()
         return
 
     message_id = message.message_id
@@ -512,10 +512,10 @@ async def cb_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     previous_snapshot = stored_snapshot or cast(ServerSnapshot | None, chat_data.get("last_snapshot"))
 
     if not address:
-        await update.callback_query.edit_message_text(
-            "Please run /status first to choose a server.", reply_markup=build_main_keyboard()
-        )
+        await query.answer("Run /status first to choose a server.", show_alert=True)
         return
+
+    fallback_notice: str | None = None
 
     try:
         snapshot = await _build_snapshot(address, include_query=False)
@@ -526,34 +526,44 @@ async def cb_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if previous_snapshot:
             snapshot = previous_snapshot
             _store_message_snapshot(context, message_id, snapshot)
+            fallback_notice = "⚠️ _Showing cached data because the server timed out._"
         else:
             await error_status_edit(update, context, address)
+            await query.answer("Server unavailable.", show_alert=True)
             return
 
     try:
-        await update.callback_query.edit_message_text(
-            _status_message(snapshot),
+        message_text = _status_message(snapshot)
+        if fallback_notice:
+            message_text = f"{message_text}\n\n{fallback_notice}"
+
+        await query.edit_message_text(
+            message_text,
             reply_markup=build_main_keyboard(),
             disable_web_page_preview=True,
         )
     except BadRequest as exc:
         if "Message is not modified" in str(exc):
             await asyncio.sleep(0.5)
-            await update.callback_query.answer()
+            await query.answer()
+            return
         else:
             raise
+
+    await query.answer()
 
 
 async def cb_players(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle the 'Players' inline button press."""
     logger.info("Callback players called")
 
-    if not update.callback_query or not update.effective_chat:
+    query = update.callback_query
+    if not query or not update.effective_chat:
         return
 
-    message = update.callback_query.message
+    message = query.message
     if not message:
-        await update.callback_query.answer()
+        await query.answer()
         return
 
     message_id = message.message_id
@@ -563,57 +573,72 @@ async def cb_players(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     previous_snapshot = stored_snapshot or cast(ServerSnapshot | None, chat_data.get("last_snapshot"))
 
     if not address:
-        await update.callback_query.edit_message_text(
-            "Please run /players first to choose a server.", reply_markup=build_main_keyboard()
-        )
+        await query.answer("Run /players first to choose a server.", show_alert=True)
         return
 
     try:
         snapshot = await _build_snapshot(address, include_query=True)
         _store_message_snapshot(context, message_id, snapshot)
         chat_data["last_snapshot"] = snapshot
+        message_text = _players_message(snapshot)
     except (asyncio.TimeoutError, OSError) as exc:  # pragma: no cover - network failures
         logger.exception(exc)
         if previous_snapshot:
-            snapshot = previous_snapshot
+            error_detail = f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
+            snapshot = replace(
+                previous_snapshot,
+                fetched_at=datetime.now(timezone.utc),
+                player_names=tuple(),
+                query_available=False,
+                query_error=error_detail,
+            )
             _store_message_snapshot(context, message_id, snapshot)
+            chat_data["last_snapshot"] = snapshot
+            message_text = _players_fallback_message(snapshot)
         else:
             await error_players_edit(update, context, address)
+            await query.answer("Could not refresh player list.", show_alert=True)
             return
 
     try:
-        await update.callback_query.edit_message_text(
-            _players_message(snapshot),
+        await query.edit_message_text(
+            message_text,
             reply_markup=build_main_keyboard(),
             disable_web_page_preview=True,
         )
     except BadRequest as exc:
         if "Message is not modified" in str(exc):
             await asyncio.sleep(0.5)
-            await update.callback_query.answer()
+            await query.answer()
+            return
         else:
             raise
+
+    await query.answer()
 
 
 async def cb_about(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle the 'About' inline button press."""
     logger.info("Callback about called")
 
-    if not update.callback_query:
+    query = update.callback_query
+    if not query:
         return
 
     try:
-        await update.callback_query.edit_message_text(
+        await query.edit_message_text(
             _message_with_affiliate_hint(ABOUT_TEXT),
             reply_markup=build_main_keyboard(),
         )
     except BadRequest as exc:
         if "Message is not modified" in str(exc):
             await asyncio.sleep(0.5)
-            await update.callback_query.answer()
+            await query.answer()
         else:
             raise
 
+
+    await query.answer()
 
 # ==========================
 # Error helpers
