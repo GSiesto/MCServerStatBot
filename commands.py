@@ -10,7 +10,9 @@ import asyncio
 import os
 import logging
 import re
+from collections import deque
 from collections.abc import Sequence
+from typing import Any, cast
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
@@ -42,6 +44,10 @@ MAX_PLAYER_NAMES_DISPLAY = 25
 AFFILIATE_URL_ENV = "AFFILIATE_URL"
 AFFILIATE_LABEL_ENV = "AFFILIATE_LABEL"
 AFFILIATE_BLURB_ENV = "AFFILIATE_BLURB"
+
+MESSAGE_CONTEXT_KEY = "message_context"
+MESSAGE_CONTEXT_ORDER_KEY = "message_context_order"
+MESSAGE_CONTEXT_LIMIT = 20
 
 DEFAULT_AFFILIATE_LABEL = "Create your own server"
 DEFAULT_AFFILIATE_BLURB = "Sponsored by our hosting partner\nClick to support the bot!"
@@ -175,6 +181,47 @@ def _affiliate_hint() -> str | None:
     return f"🙌 {safe_blurb}"
 
 
+def _chat_data(context: ContextTypes.DEFAULT_TYPE) -> dict[str, Any]:
+    return cast(dict[str, Any], context.chat_data)
+
+
+def _store_message_snapshot(
+    context: ContextTypes.DEFAULT_TYPE, message_id: int, snapshot: ServerSnapshot
+) -> None:
+    chat_data = _chat_data(context)
+    store = cast(dict[int, ServerSnapshot], chat_data.setdefault(MESSAGE_CONTEXT_KEY, {}))
+    order = cast(deque[int], chat_data.setdefault(MESSAGE_CONTEXT_ORDER_KEY, deque()))
+
+    if message_id in store:
+        store[message_id] = snapshot
+        try:
+            order.remove(message_id)
+        except ValueError:
+            pass
+    else:
+        store[message_id] = snapshot
+
+    order.append(message_id)
+
+    while len(order) > MESSAGE_CONTEXT_LIMIT:
+        old_id = order.popleft()
+        store.pop(old_id, None)
+
+
+def _get_message_snapshot(
+    context: ContextTypes.DEFAULT_TYPE, message_id: int
+) -> ServerSnapshot | None:
+    chat_data = _chat_data(context)
+    store = cast(dict[int, ServerSnapshot] | None, chat_data.get(MESSAGE_CONTEXT_KEY))
+    if not store:
+        return None
+
+    snapshot = store.get(message_id)
+    if isinstance(snapshot, ServerSnapshot):
+        return snapshot
+    return None
+
+
 async def _run_in_thread(func, *args, timeout: float = DEFAULT_TIMEOUT):
     return await asyncio.wait_for(asyncio.to_thread(func, *args), timeout=timeout)
 
@@ -302,23 +349,25 @@ def _players_fallback_message(snapshot: ServerSnapshot) -> str:
 async def _send_status_message(
     context: ContextTypes.DEFAULT_TYPE, chat_id: int, snapshot: ServerSnapshot
 ) -> None:
-    await context.bot.send_message(
+    message = await context.bot.send_message(
         chat_id=chat_id,
         text=_status_message(snapshot),
         reply_markup=build_main_keyboard(),
         disable_web_page_preview=True,
     )
+    _store_message_snapshot(context, message.message_id, snapshot)
 
 
 async def _send_players_message(
     context: ContextTypes.DEFAULT_TYPE, chat_id: int, snapshot: ServerSnapshot
 ) -> None:
-    await context.bot.send_message(
+    message = await context.bot.send_message(
         chat_id=chat_id,
         text=_players_message(snapshot),
         reply_markup=build_main_keyboard(),
         disable_web_page_preview=True,
     )
+    _store_message_snapshot(context, message.message_id, snapshot)
 
 
 # ==========================
@@ -332,7 +381,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     chat_id = update.effective_chat.id
-    context.chat_data.clear()
+    _chat_data(context).clear()
     await _send_typing(context, chat_id)
     await update.message.reply_text(
         _message_with_affiliate_hint(WELCOME_TEXT),
@@ -351,7 +400,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     await _send_typing(context, chat_id)
     logger.info("/status called")
 
-    args = context.args
+    args = context.args or []
     if len(args) != 1:
         await error_incomplete(context, chat_id)
         logger.info("/status did not provide an address")
@@ -370,8 +419,9 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         logger.exception(exc)
         return
 
-    context.chat_data["last_address"] = snapshot.address
-    context.chat_data["last_snapshot"] = snapshot
+    chat_data = _chat_data(context)
+    chat_data["last_address"] = snapshot.address
+    chat_data["last_snapshot"] = snapshot
 
     await _send_status_message(context, chat_id, snapshot)
     logger.info("/status %s online", address)
@@ -387,7 +437,7 @@ async def cmd_players(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     await _send_typing(context, chat_id)
     logger.info("/players called")
 
-    args = context.args
+    args = context.args or []
     if len(args) != 1:
         await error_incomplete(context, chat_id)
         logger.info("/players did not provide an address")
@@ -406,8 +456,9 @@ async def cmd_players(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         logger.exception(exc)
         return
 
-    context.chat_data["last_address"] = snapshot.address
-    context.chat_data["last_snapshot"] = snapshot
+    chat_data = _chat_data(context)
+    chat_data["last_address"] = snapshot.address
+    chat_data["last_snapshot"] = snapshot
 
     await _send_players_message(context, chat_id, snapshot)
     logger.info("/players %s online", address)
@@ -425,8 +476,15 @@ async def cb_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     await update.callback_query.answer()
 
-    address = context.chat_data.get("last_address")
-    previous_snapshot: ServerSnapshot | None = context.chat_data.get("last_snapshot")
+    message = update.callback_query.message
+    if not message:
+        return
+
+    message_id = message.message_id
+    chat_data = _chat_data(context)
+    stored_snapshot = _get_message_snapshot(context, message_id)
+    address = stored_snapshot.address if stored_snapshot else cast(str | None, chat_data.get("last_address"))
+    previous_snapshot = stored_snapshot or cast(ServerSnapshot | None, chat_data.get("last_snapshot"))
 
     if not address:
         await update.callback_query.edit_message_text(
@@ -436,11 +494,13 @@ async def cb_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     try:
         snapshot = await _build_snapshot(address, include_query=False)
-        context.chat_data["last_snapshot"] = snapshot
+        _store_message_snapshot(context, message_id, snapshot)
+        chat_data["last_snapshot"] = snapshot
     except (asyncio.TimeoutError, OSError) as exc:  # pragma: no cover - network failures
         logger.exception(exc)
         if previous_snapshot:
             snapshot = previous_snapshot
+            _store_message_snapshot(context, message_id, snapshot)
         else:
             await error_status_edit(update, context, address)
             return
@@ -460,8 +520,15 @@ async def cb_players(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     await update.callback_query.answer()
 
-    address = context.chat_data.get("last_address")
-    previous_snapshot: ServerSnapshot | None = context.chat_data.get("last_snapshot")
+    message = update.callback_query.message
+    if not message:
+        return
+
+    message_id = message.message_id
+    chat_data = _chat_data(context)
+    stored_snapshot = _get_message_snapshot(context, message_id)
+    address = stored_snapshot.address if stored_snapshot else cast(str | None, chat_data.get("last_address"))
+    previous_snapshot = stored_snapshot or cast(ServerSnapshot | None, chat_data.get("last_snapshot"))
 
     if not address:
         await update.callback_query.edit_message_text(
@@ -471,11 +538,13 @@ async def cb_players(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     try:
         snapshot = await _build_snapshot(address, include_query=True)
-        context.chat_data["last_snapshot"] = snapshot
+        _store_message_snapshot(context, message_id, snapshot)
+        chat_data["last_snapshot"] = snapshot
     except (asyncio.TimeoutError, OSError) as exc:  # pragma: no cover - network failures
         logger.exception(exc)
         if previous_snapshot:
             snapshot = previous_snapshot
+            _store_message_snapshot(context, message_id, snapshot)
         else:
             await error_players_edit(update, context, address)
             return
