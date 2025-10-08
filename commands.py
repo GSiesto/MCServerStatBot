@@ -21,6 +21,7 @@ from functools import lru_cache
 from mcstatus import JavaServer
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ChatAction
+from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 from telegram.helpers import escape_markdown
 
@@ -493,15 +494,15 @@ async def cmd_players(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 # ==========================
 
 async def cb_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle the 'Status' inline button press."""
     logger.info("Callback status called")
 
     if not update.callback_query or not update.effective_chat:
         return
 
-    await update.callback_query.answer()
-
     message = update.callback_query.message
     if not message:
+        await update.callback_query.answer()
         return
 
     message_id = message.message_id
@@ -529,23 +530,30 @@ async def cb_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             await error_status_edit(update, context, address)
             return
 
-    await update.callback_query.edit_message_text(
-        _status_message(snapshot),
-        reply_markup=build_main_keyboard(),
-        disable_web_page_preview=True,
-    )
+    try:
+        await update.callback_query.edit_message_text(
+            _status_message(snapshot),
+            reply_markup=build_main_keyboard(),
+            disable_web_page_preview=True,
+        )
+    except BadRequest as exc:
+        if "Message is not modified" in str(exc):
+            await asyncio.sleep(0.5)
+            await update.callback_query.answer()
+        else:
+            raise
 
 
 async def cb_players(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle the 'Players' inline button press."""
     logger.info("Callback players called")
 
     if not update.callback_query or not update.effective_chat:
         return
 
-    await update.callback_query.answer()
-
     message = update.callback_query.message
     if not message:
+        await update.callback_query.answer()
         return
 
     message_id = message.message_id
@@ -573,24 +581,38 @@ async def cb_players(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             await error_players_edit(update, context, address)
             return
 
-    await update.callback_query.edit_message_text(
-        _players_message(snapshot),
-        reply_markup=build_main_keyboard(),
-        disable_web_page_preview=True,
-    )
+    try:
+        await update.callback_query.edit_message_text(
+            _players_message(snapshot),
+            reply_markup=build_main_keyboard(),
+            disable_web_page_preview=True,
+        )
+    except BadRequest as exc:
+        if "Message is not modified" in str(exc):
+            await asyncio.sleep(0.5)
+            await update.callback_query.answer()
+        else:
+            raise
 
 
 async def cb_about(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle the 'About' inline button press."""
     logger.info("Callback about called")
 
     if not update.callback_query:
         return
 
-    await update.callback_query.answer()
-    await update.callback_query.edit_message_text(
-        _message_with_affiliate_hint(ABOUT_TEXT),
-        reply_markup=build_main_keyboard(),
-    )
+    try:
+        await update.callback_query.edit_message_text(
+            _message_with_affiliate_hint(ABOUT_TEXT),
+            reply_markup=build_main_keyboard(),
+        )
+    except BadRequest as exc:
+        if "Message is not modified" in str(exc):
+            await asyncio.sleep(0.5)
+            await update.callback_query.answer()
+        else:
+            raise
 
 
 # ==========================
