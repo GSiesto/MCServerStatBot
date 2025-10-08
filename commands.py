@@ -74,6 +74,16 @@ WELCOME_TEXT = (
     "Run those commands anytime, each result includes inline buttons for quick refreshes."
 )
 
+STATUS_HINT_TEXT = (
+    "ℹ️ *How to check a server*\n"
+    "Start with `/status host.example.com` to pick a server, then use the buttons to refresh the results."
+)
+
+PLAYERS_HINT_TEXT = (
+    "ℹ️ *How to list players*\n"
+    "Run `/players host.example.com` first; once the bot has a server, the buttons can refresh the player list."
+)
+
 ABOUT_TEXT = (
     "🤖 *MCServerStatBot*\n"
     "• Built for quick Minecraft Java status checks\n"
@@ -97,6 +107,14 @@ class ServerSnapshot:
     player_names: tuple[str, ...]
     query_available: bool
     query_error: str | None
+
+
+@dataclass(slots=True)
+class MessageContextEntry:
+    """Per-message context allowing callbacks to recover address and cached data."""
+
+    address: str | None
+    snapshot: ServerSnapshot | None
 
 
 # ==========================
@@ -187,21 +205,32 @@ def _chat_data(context: ContextTypes.DEFAULT_TYPE) -> dict[str, Any]:
     return cast(dict[str, Any], context.chat_data)
 
 
+def _clear_last_context(chat_data: dict[str, Any]) -> None:
+    chat_data.pop("last_address", None)
+    chat_data.pop("last_snapshot", None)
+
+
 def _store_message_snapshot(
-    context: ContextTypes.DEFAULT_TYPE, message_id: int, snapshot: ServerSnapshot
+    context: ContextTypes.DEFAULT_TYPE,
+    message_id: int,
+    snapshot: ServerSnapshot | None,
+    *,
+    address: str | None = None,
 ) -> None:
     chat_data = _chat_data(context)
-    store = cast(dict[int, ServerSnapshot], chat_data.setdefault(MESSAGE_CONTEXT_KEY, {}))
+    store = cast(dict[int, MessageContextEntry], chat_data.setdefault(MESSAGE_CONTEXT_KEY, {}))
     order = cast(deque[int], chat_data.setdefault(MESSAGE_CONTEXT_ORDER_KEY, deque()))
 
+    entry = MessageContextEntry(address=address or (snapshot.address if snapshot else None), snapshot=snapshot)
+
     if message_id in store:
-        store[message_id] = snapshot
+        store[message_id] = entry
         try:
             order.remove(message_id)
         except ValueError:
             pass
     else:
-        store[message_id] = snapshot
+        store[message_id] = entry
 
     order.append(message_id)
 
@@ -210,17 +239,23 @@ def _store_message_snapshot(
         store.pop(old_id, None)
 
 
-def _get_message_snapshot(
+def _get_message_context(
     context: ContextTypes.DEFAULT_TYPE, message_id: int
-) -> ServerSnapshot | None:
+) -> MessageContextEntry | None:
     chat_data = _chat_data(context)
-    store = cast(dict[int, ServerSnapshot] | None, chat_data.get(MESSAGE_CONTEXT_KEY))
+    store = cast(dict[int, MessageContextEntry] | None, chat_data.get(MESSAGE_CONTEXT_KEY))
     if not store:
         return None
 
-    snapshot = store.get(message_id)
-    if isinstance(snapshot, ServerSnapshot):
-        return snapshot
+    entry = store.get(message_id)
+    if isinstance(entry, MessageContextEntry):
+        return entry
+
+    if isinstance(entry, ServerSnapshot):  # legacy compatibility
+        converted = MessageContextEntry(address=entry.address, snapshot=entry)
+        store[message_id] = converted
+        return converted
+
     return None
 
 
@@ -408,8 +443,13 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.effective_chat.id
     _chat_data(context).clear()
     await _send_typing(context, chat_id)
+
+    affiliate_button = _affiliate_button()
+    affiliate_markup = InlineKeyboardMarkup([[affiliate_button]]) if affiliate_button else None
+
     await update.message.reply_text(
         _message_with_affiliate_hint(WELCOME_TEXT),
+        reply_markup=affiliate_markup,
         disable_web_page_preview=True,
     )
 
@@ -424,26 +464,33 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     await _send_typing(context, chat_id)
     logger.info("/status called")
 
+    chat_data = _chat_data(context)
+
     args = context.args or []
     if len(args) != 1:
+        _clear_last_context(chat_data)
         await error_incomplete(context, chat_id)
         logger.info("/status did not provide an address")
         return
 
     address = args[0].strip()
     if not utils.is_valid_server_address(address):
+        _clear_last_context(chat_data)
         await error_url(context, chat_id, address)
         logger.info("Invalid server address supplied for /status")
         return
+
+    chat_data["last_address"] = address
+    chat_data.pop("last_snapshot", None)
 
     try:
         snapshot = await _build_snapshot(address, include_query=False)
     except (asyncio.TimeoutError, OSError) as exc:  # pragma: no cover - network failures
         await error_status(context, chat_id, address)
         logger.exception(exc)
+        chat_data.pop("last_address", None)
         return
 
-    chat_data = _chat_data(context)
     chat_data["last_address"] = snapshot.address
     chat_data["last_snapshot"] = snapshot
 
@@ -461,26 +508,33 @@ async def cmd_players(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     await _send_typing(context, chat_id)
     logger.info("/players called")
 
+    chat_data = _chat_data(context)
+
     args = context.args or []
     if len(args) != 1:
+        _clear_last_context(chat_data)
         await error_incomplete(context, chat_id)
         logger.info("/players did not provide an address")
         return
 
     address = args[0].strip()
     if not utils.is_valid_server_address(address):
+        _clear_last_context(chat_data)
         await error_url(context, chat_id, address)
         logger.info("Invalid server address supplied for /players")
         return
+
+    chat_data["last_address"] = address
+    chat_data.pop("last_snapshot", None)
 
     try:
         snapshot = await _build_snapshot(address, include_query=True)
     except (asyncio.TimeoutError, OSError) as exc:  # pragma: no cover - network failures
         await error_status(context, chat_id, address)
         logger.exception(exc)
+        chat_data.pop("last_address", None)
         return
 
-    chat_data = _chat_data(context)
     chat_data["last_address"] = snapshot.address
     chat_data["last_snapshot"] = snapshot
 
@@ -507,12 +561,30 @@ async def cb_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     message_id = message.message_id
     chat_data = _chat_data(context)
-    stored_snapshot = _get_message_snapshot(context, message_id)
-    address = stored_snapshot.address if stored_snapshot else cast(str | None, chat_data.get("last_address"))
-    previous_snapshot = stored_snapshot or cast(ServerSnapshot | None, chat_data.get("last_snapshot"))
+    entry = _get_message_context(context, message_id)
+    if entry:
+        address = entry.address
+        previous_snapshot = entry.snapshot
+    else:
+        address = cast(str | None, chat_data.get("last_address"))
+        previous_snapshot = cast(ServerSnapshot | None, chat_data.get("last_snapshot"))
 
     if not address:
-        await query.answer("Run /status first to choose a server.", show_alert=True)
+        chat_data.pop("last_address", None)
+        chat_data.pop("last_snapshot", None)
+        try:
+            await query.edit_message_text(
+                _message_with_affiliate_hint(STATUS_HINT_TEXT),
+                reply_markup=build_main_keyboard(),
+                disable_web_page_preview=True,
+            )
+        except BadRequest as exc:
+            if "Message is not modified" in str(exc):
+                await asyncio.sleep(0.5)
+            else:
+                raise
+        _store_message_snapshot(context, message_id, None, address=None)
+        await query.answer()
         return
 
     fallback_notice: str | None = None
@@ -521,15 +593,18 @@ async def cb_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         snapshot = await _build_snapshot(address, include_query=False)
         _store_message_snapshot(context, message_id, snapshot)
         chat_data["last_snapshot"] = snapshot
+        chat_data["last_address"] = snapshot.address
     except (asyncio.TimeoutError, OSError) as exc:  # pragma: no cover - network failures
         logger.exception(exc)
         if previous_snapshot:
             snapshot = previous_snapshot
             _store_message_snapshot(context, message_id, snapshot)
+            chat_data["last_snapshot"] = snapshot
+            chat_data["last_address"] = snapshot.address
             fallback_notice = "⚠️ _Showing cached data because the server timed out._"
         else:
             await error_status_edit(update, context, address)
-            await query.answer("Server unavailable.", show_alert=True)
+            await query.answer()
             return
 
     try:
@@ -568,18 +643,37 @@ async def cb_players(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     message_id = message.message_id
     chat_data = _chat_data(context)
-    stored_snapshot = _get_message_snapshot(context, message_id)
-    address = stored_snapshot.address if stored_snapshot else cast(str | None, chat_data.get("last_address"))
-    previous_snapshot = stored_snapshot or cast(ServerSnapshot | None, chat_data.get("last_snapshot"))
+    entry = _get_message_context(context, message_id)
+    if entry:
+        address = entry.address
+        previous_snapshot = entry.snapshot
+    else:
+        address = cast(str | None, chat_data.get("last_address"))
+        previous_snapshot = cast(ServerSnapshot | None, chat_data.get("last_snapshot"))
 
     if not address:
-        await query.answer("Run /players first to choose a server.", show_alert=True)
+        chat_data.pop("last_address", None)
+        chat_data.pop("last_snapshot", None)
+        try:
+            await query.edit_message_text(
+                _message_with_affiliate_hint(PLAYERS_HINT_TEXT),
+                reply_markup=build_main_keyboard(),
+                disable_web_page_preview=True,
+            )
+        except BadRequest as exc:
+            if "Message is not modified" in str(exc):
+                await asyncio.sleep(0.5)
+            else:
+                raise
+        _store_message_snapshot(context, message_id, None, address=None)
+        await query.answer()
         return
 
     try:
         snapshot = await _build_snapshot(address, include_query=True)
         _store_message_snapshot(context, message_id, snapshot)
         chat_data["last_snapshot"] = snapshot
+        chat_data["last_address"] = snapshot.address
         message_text = _players_message(snapshot)
     except (asyncio.TimeoutError, OSError) as exc:  # pragma: no cover - network failures
         logger.exception(exc)
@@ -594,10 +688,11 @@ async def cb_players(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             )
             _store_message_snapshot(context, message_id, snapshot)
             chat_data["last_snapshot"] = snapshot
+            chat_data["last_address"] = snapshot.address
             message_text = _players_fallback_message(snapshot)
         else:
             await error_players_edit(update, context, address)
-            await query.answer("Could not refresh player list.", show_alert=True)
+            await query.answer()
             return
 
     try:
@@ -646,7 +741,10 @@ async def cb_about(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def error_status(context: ContextTypes.DEFAULT_TYPE, chat_id: int, address: str) -> None:
     safe_address = escape_markdown(address, version=1)
-    await context.bot.send_message(
+    chat_data = _chat_data(context)
+    chat_data.pop("last_address", None)
+    chat_data.pop("last_snapshot", None)
+    message = await context.bot.send_message(
         chat_id=chat_id,
         text=(
             "❌ *Server Offline*\n"
@@ -655,6 +753,7 @@ async def error_status(context: ContextTypes.DEFAULT_TYPE, chat_id: int, address
         ),
         reply_markup=build_main_keyboard(),
     )
+    _store_message_snapshot(context, message.message_id, None, address=None)
 
 
 async def error_status_edit(
@@ -664,6 +763,10 @@ async def error_status_edit(
         return
 
     safe_address = escape_markdown(address, version=1)
+    chat_data = _chat_data(context)
+    chat_data.pop("last_address", None)
+    chat_data.pop("last_snapshot", None)
+    message = update.callback_query.message
     await update.callback_query.edit_message_text(
         text=(
             "❌ *Server Offline*\n"
@@ -672,6 +775,8 @@ async def error_status_edit(
         ),
         reply_markup=build_main_keyboard(),
     )
+    if message:
+        _store_message_snapshot(context, message.message_id, None, address=None)
 
 
 async def error_players_edit(
@@ -681,6 +786,10 @@ async def error_players_edit(
         return
 
     safe_address = escape_markdown(address, version=1)
+    chat_data = _chat_data(context)
+    chat_data.pop("last_address", None)
+    chat_data.pop("last_snapshot", None)
+    message = update.callback_query.message
     await update.callback_query.edit_message_text(
         text=(
             "⚠️ *Request Failed*\n"
@@ -690,11 +799,16 @@ async def error_players_edit(
         ),
         reply_markup=build_main_keyboard(),
     )
+    if message:
+        _store_message_snapshot(context, message.message_id, None, address=None)
 
 
 async def error_url(context: ContextTypes.DEFAULT_TYPE, chat_id: int, address: str) -> None:
     safe_address = escape_markdown(address, version=1)
-    await context.bot.send_message(
+    chat_data = _chat_data(context)
+    chat_data.pop("last_address", None)
+    chat_data.pop("last_snapshot", None)
+    message = await context.bot.send_message(
         chat_id=chat_id,
         text=(
             "⚠️ *Invalid server address*\n"
@@ -705,10 +819,14 @@ async def error_url(context: ContextTypes.DEFAULT_TYPE, chat_id: int, address: s
         ),
         reply_markup=build_main_keyboard(),
     )
+    _store_message_snapshot(context, message.message_id, None, address=None)
 
 
 async def error_incomplete(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> None:
-    await context.bot.send_message(
+    chat_data = _chat_data(context)
+    chat_data.pop("last_address", None)
+    chat_data.pop("last_snapshot", None)
+    message = await context.bot.send_message(
         chat_id=chat_id,
         text=(
             "ℹ️ *Server address required*\n"
@@ -718,6 +836,7 @@ async def error_incomplete(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> 
         ),
         reply_markup=build_main_keyboard(),
     )
+    _store_message_snapshot(context, message.message_id, None, address=None)
 
 
 def _message_with_affiliate_hint(message: str) -> str:
