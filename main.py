@@ -102,14 +102,22 @@ def main() -> None:
         # The container receives HTTP POSTs from Telegram and scales to zero when idle.
         port = int(os.getenv("PORT", "8080"))
         secret_token = os.getenv("WEBHOOK_SECRET", "")
-        effective_url = webhook_url or f"https://{os.getenv('K_SERVICE', 'mcserverstatbot')}.a.run.app"
 
-        logging.info("Starting in webhook mode on port %d (URL: %s)", port, effective_url)
+        # Telegram API requires an HTTPS URL to register webhooks.
+        # If testing locally with HTTP or on initial Cloud Run boot before WEBHOOK_URL is set,
+        # we start the HTTP server on 0.0.0.0:PORT without calling Telegram's set_webhook API.
+        valid_https_url = webhook_url if (webhook_url and webhook_url.startswith("https://")) else None
+
+        logging.info(
+            "Starting HTTP server on port %d (Telegram Webhook URL: %s)",
+            port,
+            valid_https_url or "disabled/local",
+        )
         application.run_webhook(
             listen="0.0.0.0",
             port=port,
             url_path="webhook",
-            webhook_url=f"{effective_url.rstrip('/')}/webhook",
+            webhook_url=f"{valid_https_url.rstrip('/')}/webhook" if valid_https_url else None,
             secret_token=secret_token or None,
         )
     else:
