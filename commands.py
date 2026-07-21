@@ -276,7 +276,12 @@ async def _run_in_thread(func, *args, timeout: float = DEFAULT_TIMEOUT):
 
 
 async def _lookup_server(address: str) -> JavaServer:
-    return await _run_in_thread(JavaServer.lookup, address)
+    try:
+        return await _run_in_thread(JavaServer.lookup, address)
+    except Exception as exc:
+        logger.debug("JavaServer.lookup failed for %s (%s), falling back to direct parse", address, exc)
+        host, port = utils.parse_address(address)
+        return JavaServer(host, port)
 
 
 async def _fetch_status(server: JavaServer):
@@ -525,7 +530,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     try:
         snapshot = await _build_snapshot(address, include_query=False)
-    except (asyncio.TimeoutError, OSError) as exc:  # pragma: no cover - network failures
+    except Exception as exc:  # pragma: no cover - network failures
         await error_status(context, chat_id, address)
         logger.exception(exc)
         chat_data.pop("last_address", None)
@@ -569,7 +574,7 @@ async def cmd_players(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     try:
         snapshot = await _build_snapshot(address, include_query=True)
-    except (asyncio.TimeoutError, OSError) as exc:  # pragma: no cover - network failures
+    except Exception as exc:  # pragma: no cover - network failures
         await error_status(context, chat_id, address)
         logger.exception(exc)
         chat_data.pop("last_address", None)
@@ -634,7 +639,7 @@ async def cb_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         _store_message_snapshot(context, message_id, snapshot)
         chat_data["last_snapshot"] = snapshot
         chat_data["last_address"] = snapshot.address
-    except (asyncio.TimeoutError, OSError) as exc:  # pragma: no cover - network failures
+    except Exception as exc:  # pragma: no cover - network failures
         logger.exception(exc)
         if previous_snapshot:
             snapshot = previous_snapshot
@@ -715,7 +720,7 @@ async def cb_players(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         chat_data["last_snapshot"] = snapshot
         chat_data["last_address"] = snapshot.address
         message_text = _players_message(snapshot)
-    except (asyncio.TimeoutError, OSError) as exc:  # pragma: no cover - network failures
+    except Exception as exc:  # pragma: no cover - network failures
         logger.exception(exc)
         if previous_snapshot:
             error_detail = f"{type(exc).__name__}: {exc}" if str(exc) else type(exc).__name__
