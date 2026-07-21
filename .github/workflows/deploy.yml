@@ -70,3 +70,11 @@ jobs:
           gcloud run services update ${{ env.SERVICE }} \
             --region ${{ env.REGION }} \
             --update-env-vars "WEBHOOK_URL=${SERVICE_URL}"
+
+      - name: Clean up Old Container Images
+        run: |
+          echo "Cleaning up old untagged container images to stay strictly within free 0.5 GB storage limits..."
+          PROJECT_ID=$(gcloud config get-value project)
+          gcloud container images list-tags "gcr.io/${PROJECT_ID}/${env.SERVICE}" \
+            --filter="-tags:*" --format="get(digest)" | xargs -I {} gcloud container images delete "gcr.io/${PROJECT_ID}/${env.SERVICE}@{}" --force-delete-tags --quiet || true
+
