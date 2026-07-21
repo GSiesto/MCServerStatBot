@@ -39,7 +39,7 @@ __all__ = [
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_TIMEOUT = 3.0  # seconds
+DEFAULT_TIMEOUT = 10.0  # seconds
 MAX_PLAYER_NAMES_DISPLAY = 25
 
 AFFILIATE_URL_ENV = "AFFILIATE_URL"
