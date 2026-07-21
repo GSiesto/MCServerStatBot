@@ -42,7 +42,11 @@ jobs:
           LOG_LEVEL: ${{ secrets.LOG_LEVEL || vars.LOG_LEVEL }}
 
         run: |
+          SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE }} --region ${{ env.REGION }} --format 'value(status.url)' --quiet 2>/dev/null || echo "")
           ENV_VARS="TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN},WEBHOOK_SECRET=${WEBHOOK_SECRET}"
+          if [ -n "$SERVICE_URL" ]; then
+            ENV_VARS="${ENV_VARS},WEBHOOK_URL=${SERVICE_URL}"
+          fi
           if [ -n "$AFFILIATE_URL" ]; then
             ENV_VARS="${ENV_VARS},AFFILIATE_URL=${AFFILIATE_URL}"
           fi
@@ -60,18 +64,18 @@ jobs:
             --source . \
             --region ${{ env.REGION }} \
             --allow-unauthenticated \
+            --no-cpu-throttling \
             --quiet \
             --set-env-vars "${ENV_VARS}"
 
-
-      - name: Configure Webhook URL
-        run: |
-          SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE }} --region ${{ env.REGION }} --format 'value(status.url)' --quiet)
-          echo "Discovered Cloud Run Service URL: $SERVICE_URL"
-          gcloud run services update ${{ env.SERVICE }} \
-            --region ${{ env.REGION }} \
-            --quiet \
-            --update-env-vars "WEBHOOK_URL=${SERVICE_URL}"
+          NEW_SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE }} --region ${{ env.REGION }} --format 'value(status.url)' --quiet)
+          echo "Discovered Cloud Run Service URL: $NEW_SERVICE_URL"
+          if [ "$SERVICE_URL" != "$NEW_SERVICE_URL" ]; then
+            gcloud run services update ${{ env.SERVICE }} \
+              --region ${{ env.REGION }} \
+              --quiet \
+              --update-env-vars "WEBHOOK_URL=${NEW_SERVICE_URL}"
+          fi
 
 
       - name: Clean up Old Container Images
