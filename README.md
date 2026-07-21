@@ -91,7 +91,25 @@ MCServerStatBot is a modern asyncio-based Telegram bot that checks the status of
 
 	You should see log output confirming the bot is polling Telegram. Send `/start` to your bot to begin.
 
+### Running with Docker & Docker Compose
+
+1. Copy `.env.example` to `.env` and fill in your `TELEGRAM_BOT_TOKEN`:
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Start the container:
+   ```bash
+   docker compose up -d --build
+   ```
+
+3. View container logs:
+   ```bash
+   docker compose logs -f
+   ```
+
 ## Commands
+
 
 - `/start` – display a quick introduction and usage tips
 - `/status <host[:port]>` – fetch latency, MOTD, version and player counts
