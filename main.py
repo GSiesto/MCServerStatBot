@@ -103,21 +103,20 @@ def main() -> None:
         port = int(os.getenv("PORT", "8080"))
         secret_token = os.getenv("WEBHOOK_SECRET", "")
 
-        # Telegram API requires an HTTPS URL to register webhooks.
-        # If testing locally with HTTP or on initial Cloud Run boot before WEBHOOK_URL is set,
-        # we start the HTTP server on 0.0.0.0:PORT without calling Telegram's set_webhook API.
-        valid_https_url = webhook_url if (webhook_url and webhook_url.startswith("https://")) else None
+        # Telegram API strictly requires an HTTPS URL when registering webhooks.
+        # If running locally or on initial Cloud Run boot before WEBHOOK_URL is assigned,
+        # fallback to a dummy HTTPS URL so Telegram API call succeeds while binding 0.0.0.0:PORT locally.
+        if webhook_url and webhook_url.startswith("https://"):
+            effective_webhook_url = f"{webhook_url.rstrip('/')}/webhook"
+        else:
+            effective_webhook_url = "https://example.com/webhook"
 
-        logging.info(
-            "Starting HTTP server on port %d (Telegram Webhook URL: %s)",
-            port,
-            valid_https_url or "disabled/local",
-        )
+        logging.info("Starting HTTP server on port %d (Webhook URL: %s)", port, effective_webhook_url)
         application.run_webhook(
             listen="0.0.0.0",
             port=port,
             url_path="webhook",
-            webhook_url=f"{valid_https_url.rstrip('/')}/webhook" if valid_https_url else None,
+            webhook_url=effective_webhook_url,
             secret_token=secret_token or None,
         )
     else:
