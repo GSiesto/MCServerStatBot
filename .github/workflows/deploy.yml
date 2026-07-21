@@ -60,16 +60,19 @@ jobs:
             --source . \
             --region ${{ env.REGION }} \
             --allow-unauthenticated \
+            --quiet \
             --set-env-vars "${ENV_VARS}"
 
 
       - name: Configure Webhook URL
         run: |
-          SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE }} --region ${{ env.REGION }} --format 'value(status.url)')
+          SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE }} --region ${{ env.REGION }} --format 'value(status.url)' --quiet)
           echo "Discovered Cloud Run Service URL: $SERVICE_URL"
           gcloud run services update ${{ env.SERVICE }} \
             --region ${{ env.REGION }} \
+            --quiet \
             --update-env-vars "WEBHOOK_URL=${SERVICE_URL}"
+
 
       - name: Clean up Old Container Images
         run: |
