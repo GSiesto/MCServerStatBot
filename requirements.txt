@@ -1,2 +1,3 @@
-python-telegram-bot==22.5
+python-telegram-bot[webhooks]==22.5
 mcstatus==12.0.5
+
