@@ -372,7 +372,7 @@ def _status_message(snapshot: ServerSnapshot) -> str:
     
     desc_lines = [line.strip() for line in snapshot.description.split("\n") if line.strip()]
     escaped_desc_lines = [escape_markdown(line, version=1) for line in desc_lines]
-    formatted_motd = "\n".join(f"> _{line}_" for line in escaped_desc_lines) or "> _No description provided._"
+    formatted_motd = "\n".join(f"_{line}_" for line in escaped_desc_lines) or "_No description provided._"
 
     version_name = escape_markdown(snapshot.version_name, version=1)
     fetched = escape_markdown(snapshot.fetched_at.strftime("%Y-%m-%d %H:%M UTC"), version=1)
@@ -412,7 +412,7 @@ def _players_message(snapshot: ServerSnapshot) -> str:
             parts.extend(
                 [
                     "",
-                    "> ℹ️ _Showing limited sample from status ping; full query protocol disabled on server._",
+                    "ℹ️ _Showing limited sample from status ping; full query protocol disabled on server._",
                 ]
             )
 
@@ -430,7 +430,7 @@ def _players_fallback_message(snapshot: ServerSnapshot) -> str:
         f"🌐 `{safe_address}`",
         f"📊 *Online:* `{capacity}`",
         "",
-        "> ⚠️ _This server has queries disabled, so individual player names are not available._",
+        "⚠️ _This server has queries disabled, so individual player names are not available._",
     ]
 
     if snapshot.query_error:
@@ -438,7 +438,7 @@ def _players_fallback_message(snapshot: ServerSnapshot) -> str:
         lines.extend(
             [
                 "",
-                f"> ℹ️ _Query status: {safe_error}_",
+                f"ℹ️ _Query status: {safe_error}_",
             ]
         )
 
@@ -789,7 +789,7 @@ async def error_status(context: ContextTypes.DEFAULT_TYPE, chat_id: int, address
         text=_message_with_affiliate_hint(
             "🔴 *SERVER OFFLINE*\n"
             f"🌐 `{safe_address}`\n\n"
-            "> ⚙️ _Could not connect to the Minecraft server. Verify the address or port._"
+            "⚙️ _Could not connect to the Minecraft server. Verify the address or port._"
         ),
         reply_markup=build_main_keyboard(),
     )
@@ -811,7 +811,7 @@ async def error_status_edit(
         text=_message_with_affiliate_hint(
             "🔴 *SERVER OFFLINE*\n"
             f"🌐 `{safe_address}`\n\n"
-            "> ⚙️ _Could not connect to the Minecraft server. Verify the address or port._"
+            "⚙️ _Could not connect to the Minecraft server. Verify the address or port._"
         ),
         reply_markup=build_main_keyboard(),
     )
@@ -834,7 +834,7 @@ async def error_players_edit(
         text=_message_with_affiliate_hint(
             "⚠️ *REQUEST FAILED*\n"
             f"🌐 `{safe_address}`\n\n"
-            "> ⚙️ _Could not connect or server queries are disabled._"
+            "⚙️ _Could not connect or server queries are disabled._"
         ),
         reply_markup=build_main_keyboard(),
     )
