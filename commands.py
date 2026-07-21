@@ -277,19 +277,28 @@ async def _run_in_thread(func, *args, timeout: float = DEFAULT_TIMEOUT):
 
 async def _lookup_server(address: str) -> JavaServer:
     try:
-        return await _run_in_thread(JavaServer.lookup, address)
+        return await JavaServer.async_lookup(address, timeout=DEFAULT_TIMEOUT)
     except Exception as exc:
-        logger.debug("JavaServer.lookup failed for %s (%s), falling back to direct parse", address, exc)
-        host, port = utils.parse_address(address)
-        return JavaServer(host, port)
+        logger.debug("JavaServer.async_lookup failed for %s (%s), trying sync lookup", address, exc)
+        try:
+            return await _run_in_thread(JavaServer.lookup, address, timeout=DEFAULT_TIMEOUT)
+        except Exception:
+            host, port = utils.parse_address(address)
+            return JavaServer(host, port)
 
 
 async def _fetch_status(server: JavaServer):
-    return await _run_in_thread(server.status)
+    try:
+        return await server.async_status(timeout=DEFAULT_TIMEOUT)
+    except Exception:
+        return await _run_in_thread(server.status, timeout=DEFAULT_TIMEOUT)
 
 
 async def _fetch_query(server: JavaServer):
-    return await _run_in_thread(server.query)
+    try:
+        return await server.async_query(timeout=DEFAULT_TIMEOUT)
+    except Exception:
+        return await _run_in_thread(server.query, timeout=DEFAULT_TIMEOUT)
 
 
 async def _send_typing(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> None:
