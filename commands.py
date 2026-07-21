@@ -173,12 +173,21 @@ def build_main_keyboard() -> InlineKeyboardMarkup:
 
 @lru_cache(maxsize=1)
 def _get_affiliate_config() -> tuple[str, str, str] | None:
-    url = (os.getenv(AFFILIATE_URL_ENV) or "").strip()
+    url = (os.getenv(AFFILIATE_URL_ENV) or "").strip().strip("'\"")
     if not url:
         return None
 
-    label = (os.getenv(AFFILIATE_LABEL_ENV) or DEFAULT_AFFILIATE_LABEL).strip() or DEFAULT_AFFILIATE_LABEL
-    blurb = (os.getenv(AFFILIATE_BLURB_ENV) or DEFAULT_AFFILIATE_BLURB).strip() or DEFAULT_AFFILIATE_BLURB
+    label = (os.getenv(AFFILIATE_LABEL_ENV) or DEFAULT_AFFILIATE_LABEL).strip().strip("'\"") or DEFAULT_AFFILIATE_LABEL
+
+    blurb_raw = (os.getenv(AFFILIATE_BLURB_ENV) or DEFAULT_AFFILIATE_BLURB).strip()
+    if blurb_raw.startswith("$'") and blurb_raw.endswith("'"):
+        blurb_raw = blurb_raw[2:-1]
+    elif blurb_raw.startswith('$"') and blurb_raw.endswith('"'):
+        blurb_raw = blurb_raw[2:-1]
+    else:
+        blurb_raw = blurb_raw.strip("'\"")
+
+    blurb = blurb_raw.replace("\\n", "\n").strip() or DEFAULT_AFFILIATE_BLURB
     return url, label, blurb
 
 
@@ -197,8 +206,11 @@ def _affiliate_hint() -> str | None:
         return None
 
     _, _, blurb = config
-    safe_blurb = escape_markdown(blurb, version=1)
+    lines = blurb.split("\n")
+    escaped_lines = [escape_markdown(line, version=1) for line in lines]
+    safe_blurb = "\n".join(escaped_lines)
     return f"🙌 {safe_blurb}"
+
 
 
 def _chat_data(context: ContextTypes.DEFAULT_TYPE) -> dict[str, Any]:
