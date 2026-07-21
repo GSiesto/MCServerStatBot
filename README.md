@@ -160,14 +160,16 @@ The repository includes a automated deployment workflow (`.github/workflows/depl
 
 To set up automatic deployments:
 1. Go to your GitHub Repository -> **Settings** -> **Secrets and variables** -> **Actions**.
-2. Add the following **Repository Secrets**:
-   * `GCP_SA_KEY`: *(Required)* Your GCP Service Account JSON key (with Cloud Run Admin & Service Account User roles).
-   * `TELEGRAM_BOT_TOKEN`: *(Required)* Your Telegram Bot Token from `@BotFather`.
-   * `WEBHOOK_SECRET`: *(Required)* A secret string used to validate incoming webhooks from Telegram.
-   * `AFFILIATE_URL`: *(Optional)* Referral link for server hosting partner.
-   * `AFFILIATE_LABEL`: *(Optional)* Button text for referral link.
-   * `AFFILIATE_BLURB`: *(Optional)* Subtitle hint text for referral link.
-   * `LOG_LEVEL`: *(Optional)* Logging verbosity (`INFO`, `DEBUG`, etc.).
+2. Under the **Secrets** tab, add the following required secrets:
+   * `GCP_SA_KEY`: Your GCP Service Account JSON key (with Cloud Run Admin & Service Account User roles).
+   * `TELEGRAM_BOT_TOKEN`: Your Telegram Bot Token from `@BotFather`.
+   * `WEBHOOK_SECRET`: A secret string used to validate incoming webhooks from Telegram.
+3. Under the **Variables** tab (or **Secrets** tab), add any optional configuration variables:
+   * `AFFILIATE_URL`: Referral link for server hosting partner (`https://billing.sparkedhost.com/aff.php?aff=...`).
+   * `AFFILIATE_LABEL`: Button text for referral link (`Create your own MC server`).
+   * `AFFILIATE_BLURB`: Subtitle hint text for referral link.
+   * `LOG_LEVEL`: Logging verbosity (`INFO`, `DEBUG`, etc.).
+
 
 
 Whenever code is merged to `master`, GitHub Actions will build the container, deploy to Cloud Run, and set up the webhook automatically!

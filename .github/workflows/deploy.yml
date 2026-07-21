@@ -36,10 +36,11 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
-          AFFILIATE_URL: ${{ secrets.AFFILIATE_URL }}
-          AFFILIATE_LABEL: ${{ secrets.AFFILIATE_LABEL }}
-          AFFILIATE_BLURB: ${{ secrets.AFFILIATE_BLURB }}
-          LOG_LEVEL: ${{ secrets.LOG_LEVEL }}
+          AFFILIATE_URL: ${{ secrets.AFFILIATE_URL || vars.AFFILIATE_URL }}
+          AFFILIATE_LABEL: ${{ secrets.AFFILIATE_LABEL || vars.AFFILIATE_LABEL }}
+          AFFILIATE_BLURB: ${{ secrets.AFFILIATE_BLURB || vars.AFFILIATE_BLURB }}
+          LOG_LEVEL: ${{ secrets.LOG_LEVEL || vars.LOG_LEVEL }}
+
         run: |
           ENV_VARS="TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN},WEBHOOK_SECRET=${WEBHOOK_SECRET}"
           if [ -n "$AFFILIATE_URL" ]; then
