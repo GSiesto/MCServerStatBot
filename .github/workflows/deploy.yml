@@ -1,4 +1,4 @@
-name: Deploy to Google Cloud Run
+name: Deployment
 
 on:
   push:
@@ -14,10 +14,14 @@ jobs:
   deploy:
     name: Build & Deploy to Cloud Run
     runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.service_url }}
 
     permissions:
       contents: read
       id-token: write
+      deployments: write
 
     steps:
       - name: Checkout repository
@@ -70,6 +74,7 @@ jobs:
 
           NEW_SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE }} --region ${{ env.REGION }} --format 'value(status.url)' --quiet)
           echo "Discovered Cloud Run Service URL: $NEW_SERVICE_URL"
+          echo "service_url=${NEW_SERVICE_URL}" >> $GITHUB_OUTPUT
           if [ "$SERVICE_URL" != "$NEW_SERVICE_URL" ]; then
             gcloud run services update ${{ env.SERVICE }} \
               --region ${{ env.REGION }} \

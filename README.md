@@ -5,6 +5,9 @@
 </p>
 
 <p align="center">
+	<a href="https://github.com/GSiesto/MCServerStatBot/actions/workflows/deploy.yml">
+		<img src="https://github.com/GSiesto/MCServerStatBot/actions/workflows/deploy.yml/badge.svg" alt="Deployment">
+	</a>
 	<a href="https://t.me/MCServerStatBot" target="_blank">
 		<img src="https://img.shields.io/badge/Telegram-Try%20the%20bot-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white" alt="Try MCServerStatBot on Telegram">
 	</a>
