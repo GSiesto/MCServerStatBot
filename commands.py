@@ -351,21 +351,44 @@ def _format_player_names(names: Sequence[str]) -> str:
     return "\n".join(lines)
 
 
+def _ping_indicator(ms: int) -> str:
+    if ms < 100:
+        return "🟢"
+    elif ms < 250:
+        return "🟡"
+    else:
+        return "🔴"
+
+
+def _capacity_info(online: int, max_players: int) -> str:
+    if max_players > 0:
+        pct = (online / max_players) * 100
+        return f"{online} / {max_players} ({pct:.1f}%)"
+    return f"{online} / {max_players}"
+
+
 def _status_message(snapshot: ServerSnapshot) -> str:
     safe_address = escape_markdown(snapshot.address, version=1)
-    description = escape_markdown(snapshot.description, version=1)
+    
+    desc_lines = [line.strip() for line in snapshot.description.split("\n") if line.strip()]
+    escaped_desc_lines = [escape_markdown(line, version=1) for line in desc_lines]
+    formatted_motd = "\n".join(f"> _{line}_" for line in escaped_desc_lines) or "> _No description provided._"
+
     version_name = escape_markdown(snapshot.version_name, version=1)
-    fetched = escape_markdown(snapshot.fetched_at.strftime("%Y-%m-%d %H:%M:%SZ"), version=1)
+    fetched = escape_markdown(snapshot.fetched_at.strftime("%Y-%m-%d %H:%M UTC"), version=1)
+    ping_icon = _ping_indicator(snapshot.latency_ms)
+    capacity = _capacity_info(snapshot.players_online, snapshot.players_max)
 
     base = (
-        "✅ *Server Online*\n"
-        f"🌐 `{safe_address}`\n"
-        f"🕒 Checked: {fetched}\n\n"
-        "📝 *Description*\n"
-        f"_{description}_\n\n"
-        f"📦 *Version:* {version_name}\n"
-        f"📶 *Ping:* {snapshot.latency_ms} ms\n"
-        f"👥 *Players:* {snapshot.players_online}/{snapshot.players_max}"
+        "🟢 *SERVER ONLINE*\n"
+        f"🌐 `{safe_address}`\n\n"
+        "💬 *MOTD*\n"
+        f"{formatted_motd}\n\n"
+        "📊 *Server Details*\n"
+        f"• *Version:* `{version_name}`\n"
+        f"• *Latency:* `{snapshot.latency_ms} ms` {ping_icon}\n"
+        f"• *Players:* `{capacity}`\n\n"
+        f"🕒 _Checked: {fetched}_"
     )
 
     return _message_with_affiliate_hint(base)
@@ -373,10 +396,12 @@ def _status_message(snapshot: ServerSnapshot) -> str:
 
 def _players_message(snapshot: ServerSnapshot) -> str:
     safe_address = escape_markdown(snapshot.address, version=1)
+    capacity = _capacity_info(snapshot.players_online, snapshot.players_max)
+    
     header = (
-        "👥 *Players Online*\n"
+        "👥 *PLAYERS ONLINE*\n"
         f"🌐 `{safe_address}`\n"
-        f"🟢 Currently: {snapshot.players_online} / {snapshot.players_max} players"
+        f"📊 *Online:* `{capacity}`"
     )
 
     if snapshot.player_names:
@@ -387,7 +412,7 @@ def _players_message(snapshot: ServerSnapshot) -> str:
             parts.extend(
                 [
                     "",
-                    "ℹ️ _Showing the limited sample returned by the status ping; the server may not expose its full player list._",
+                    "> ℹ️ _Showing limited sample from status ping; full query protocol disabled on server._",
                 ]
             )
 
@@ -398,12 +423,14 @@ def _players_message(snapshot: ServerSnapshot) -> str:
 
 def _players_fallback_message(snapshot: ServerSnapshot) -> str:
     safe_address = escape_markdown(snapshot.address, version=1)
+    capacity = _capacity_info(snapshot.players_online, snapshot.players_max)
+    
     lines = [
-        "👥 Players Online",
-        f"🌐 {safe_address}",
-        f"🟢 Currently: {snapshot.players_online} / {snapshot.players_max} players",
+        "👥 *PLAYERS ONLINE*",
+        f"🌐 `{safe_address}`",
+        f"📊 *Online:* `{capacity}`",
         "",
-        "⚠️ This server has queries disabled, so individual player names aren't available.",
+        "> ⚠️ _This server has queries disabled, so individual player names are not available._",
     ]
 
     if snapshot.query_error:
@@ -411,11 +438,12 @@ def _players_fallback_message(snapshot: ServerSnapshot) -> str:
         lines.extend(
             [
                 "",
-                f"ℹ️ Query failed with: {safe_error}",
+                f"> ℹ️ _Query status: {safe_error}_",
             ]
         )
 
     return _message_with_affiliate_hint("\n".join(lines))
+
 
 
 async def _send_status_message(
@@ -758,10 +786,10 @@ async def error_status(context: ContextTypes.DEFAULT_TYPE, chat_id: int, address
     chat_data.pop("last_snapshot", None)
     message = await context.bot.send_message(
         chat_id=chat_id,
-        text=(
-            "❌ *Server Offline*\n"
-            f"🌐 `{safe_address}`\n"
-            "⚙️ _Could not connect to the server._"
+        text=_message_with_affiliate_hint(
+            "🔴 *SERVER OFFLINE*\n"
+            f"🌐 `{safe_address}`\n\n"
+            "> ⚙️ _Could not connect to the Minecraft server. Verify the address or port._"
         ),
         reply_markup=build_main_keyboard(),
     )
@@ -780,10 +808,10 @@ async def error_status_edit(
     chat_data.pop("last_snapshot", None)
     message = update.callback_query.message
     await update.callback_query.edit_message_text(
-        text=(
-            "❌ *Server Offline*\n"
-            f"🌐 `{safe_address}`\n"
-            "⚙️ _Could not connect to the server._"
+        text=_message_with_affiliate_hint(
+            "🔴 *SERVER OFFLINE*\n"
+            f"🌐 `{safe_address}`\n\n"
+            "> ⚙️ _Could not connect to the Minecraft server. Verify the address or port._"
         ),
         reply_markup=build_main_keyboard(),
     )
@@ -803,11 +831,10 @@ async def error_players_edit(
     chat_data.pop("last_snapshot", None)
     message = update.callback_query.message
     await update.callback_query.edit_message_text(
-        text=(
-            "⚠️ *Request Failed*\n"
-            f"🌐 `{safe_address}`\n"
-            "⚙️ _Could not connect to the server._\n"
-            "🔒 _This server might have queries disabled._"
+        text=_message_with_affiliate_hint(
+            "⚠️ *REQUEST FAILED*\n"
+            f"🌐 `{safe_address}`\n\n"
+            "> ⚙️ _Could not connect or server queries are disabled._"
         ),
         reply_markup=build_main_keyboard(),
     )
@@ -822,12 +849,13 @@ async def error_url(context: ContextTypes.DEFAULT_TYPE, chat_id: int, address: s
     chat_data.pop("last_snapshot", None)
     message = await context.bot.send_message(
         chat_id=chat_id,
-        text=(
-            "⚠️ *Invalid server address*\n"
+        text=_message_with_affiliate_hint(
+            "⚠️ *INVALID SERVER ADDRESS*\n"
             f"`{safe_address}`\n\n"
-            "Please provide a hostname like:\n"
-            "• `play.minecraft.net`\n"
-            "• `minecraftgame.org`"
+            "Please provide a hostname or IP like:\n"
+            "• `play.hypixel.net`\n"
+            "• `juega.orizon.gg`\n"
+            "• `mc.example.com:25565`"
         ),
         reply_markup=build_main_keyboard(),
     )
@@ -840,15 +868,16 @@ async def error_incomplete(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> 
     chat_data.pop("last_snapshot", None)
     message = await context.bot.send_message(
         chat_id=chat_id,
-        text=(
-            "ℹ️ *Server address required*\n"
-            "Use the command like this:\n"
-            "• `/status play.minecraft.net`\n"
-            "• `/players minecraftgame.org:25565`"
+        text=_message_with_affiliate_hint(
+            "ℹ️ *SERVER ADDRESS REQUIRED*\n\n"
+            "Use the command with a server address:\n"
+            "• `/status juega.orizon.gg`\n"
+            "• `/players play.hypixel.net`"
         ),
         reply_markup=build_main_keyboard(),
     )
     _store_message_snapshot(context, message.message_id, None, address=None)
+
 
 
 def _message_with_affiliate_hint(message: str) -> str:
