@@ -91,7 +91,25 @@ MCServerStatBot is a modern asyncio-based Telegram bot that checks the status of
 
 	You should see log output confirming the bot is polling Telegram. Send `/start` to your bot to begin.
 
+### Running with Docker & Docker Compose
+
+1. Copy `.env.example` to `.env` and fill in your `TELEGRAM_BOT_TOKEN`:
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Start the container:
+   ```bash
+   docker compose up -d --build
+   ```
+
+3. View container logs:
+   ```bash
+   docker compose logs -f
+   ```
+
 ## Commands
+
 
 - `/start` – display a quick introduction and usage tips
 - `/status <host[:port]>` – fetch latency, MOTD, version and player counts
@@ -106,6 +124,56 @@ MCServerStatBot is a modern asyncio-based Telegram bot that checks the status of
 ## Optional support links
 
 - The public bot may show a support/affiliate button, but self-hosted copies ship with monetization disabled. If you want to enable the feature, check [`MONETIZATION.md`](./MONETIZATION.md) for full details.
+
+## Deploying to Google Cloud Run (free tier)
+
+The bot supports **webhook mode** out of the box, which lets Cloud Run scale to zero when idle and stay within the free tier.
+
+1. **Install the [gcloud CLI](https://cloud.google.com/sdk/docs/install)** and authenticate:
+   ```bash
+   gcloud auth login
+   gcloud config set project YOUR_PROJECT_ID
+   ```
+
+2. **Deploy to Cloud Run:**
+   ```bash
+   gcloud run deploy mcserverstatbot \
+     --source . \
+     --region us-central1 \
+     --allow-unauthenticated \
+     --set-env-vars TELEGRAM_BOT_TOKEN=YOUR_TOKEN \
+     --set-env-vars WEBHOOK_SECRET=YOUR_RANDOM_SECRET
+   ```
+
+3. **Set the webhook URL** — Cloud Run prints the service URL after deploy (e.g. `https://mcserverstatbot-abc123.run.app`). Update the service with it:
+   ```bash
+   gcloud run services update mcserverstatbot \
+     --region us-central1 \
+     --update-env-vars WEBHOOK_URL=https://mcserverstatbot-abc123.run.app
+   ```
+
+> **Polling vs. Webhook mode:** When `WEBHOOK_URL` is set, the bot runs in webhook mode (ideal for serverless). When it is omitted, the bot falls back to long polling (ideal for local development or always-on VMs).
+
+### Automated CI/CD with GitHub Actions
+
+The repository includes a automated deployment workflow (`.github/workflows/deploy.yml`) that builds and deploys your bot to Google Cloud Run automatically whenever you push to `master`.
+
+To set up automatic deployments:
+1. Go to your GitHub Repository -> **Settings** -> **Secrets and variables** -> **Actions**.
+2. Under the **Secrets** tab, add the following required secrets:
+   * `GCP_SA_KEY`: Your GCP Service Account JSON key (with Cloud Run Admin & Service Account User roles).
+   * `TELEGRAM_BOT_TOKEN`: Your Telegram Bot Token from `@BotFather`.
+   * `WEBHOOK_SECRET`: A secret string used to validate incoming webhooks from Telegram.
+3. Under the **Variables** tab (or **Secrets** tab), add any optional configuration variables:
+   * `AFFILIATE_URL`: Referral link for server hosting partner (`https://billing.sparkedhost.com/aff.php?aff=...`).
+   * `AFFILIATE_LABEL`: Button text for referral link (`Create your own MC server`).
+   * `AFFILIATE_BLURB`: Subtitle hint text for referral link.
+   * `LOG_LEVEL`: Logging verbosity (`INFO`, `DEBUG`, etc.).
+
+
+
+Whenever code is merged to `master`, GitHub Actions will build the container, deploy to Cloud Run, and set up the webhook automatically!
+
 
 ## 🛠️ Ideas for running 24/7 on a Raspberry Pi
 

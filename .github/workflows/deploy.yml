@@ -1,0 +1,80 @@
+name: Deploy to Google Cloud Run
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+env:
+  SERVICE: mcserverstatbot
+  REGION: us-central1
+
+jobs:
+  deploy:
+    name: Build & Deploy to Cloud Run
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy to Cloud Run
+        id: deploy
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
+          AFFILIATE_URL: ${{ secrets.AFFILIATE_URL || vars.AFFILIATE_URL }}
+          AFFILIATE_LABEL: ${{ secrets.AFFILIATE_LABEL || vars.AFFILIATE_LABEL }}
+          AFFILIATE_BLURB: ${{ secrets.AFFILIATE_BLURB || vars.AFFILIATE_BLURB }}
+          LOG_LEVEL: ${{ secrets.LOG_LEVEL || vars.LOG_LEVEL }}
+
+        run: |
+          ENV_VARS="TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN},WEBHOOK_SECRET=${WEBHOOK_SECRET}"
+          if [ -n "$AFFILIATE_URL" ]; then
+            ENV_VARS="${ENV_VARS},AFFILIATE_URL=${AFFILIATE_URL}"
+          fi
+          if [ -n "$AFFILIATE_LABEL" ]; then
+            ENV_VARS="${ENV_VARS},AFFILIATE_LABEL=${AFFILIATE_LABEL}"
+          fi
+          if [ -n "$AFFILIATE_BLURB" ]; then
+            ENV_VARS="${ENV_VARS},AFFILIATE_BLURB=${AFFILIATE_BLURB}"
+          fi
+          if [ -n "$LOG_LEVEL" ]; then
+            ENV_VARS="${ENV_VARS},LOG_LEVEL=${LOG_LEVEL}"
+          fi
+
+          gcloud run deploy ${{ env.SERVICE }} \
+            --source . \
+            --region ${{ env.REGION }} \
+            --allow-unauthenticated \
+            --set-env-vars "${ENV_VARS}"
+
+
+      - name: Configure Webhook URL
+        run: |
+          SERVICE_URL=$(gcloud run services describe ${{ env.SERVICE }} --region ${{ env.REGION }} --format 'value(status.url)')
+          echo "Discovered Cloud Run Service URL: $SERVICE_URL"
+          gcloud run services update ${{ env.SERVICE }} \
+            --region ${{ env.REGION }} \
+            --update-env-vars "WEBHOOK_URL=${SERVICE_URL}"
+
+      - name: Clean up Old Container Images
+        run: |
+          echo "Cleaning up old untagged container images to stay strictly within free 0.5 GB storage limits..."
+          PROJECT_ID=$(gcloud config get-value project)
+          gcloud container images list-tags "gcr.io/${PROJECT_ID}/${env.SERVICE}" \
+            --filter="-tags:*" --format="get(digest)" | xargs -I {} gcloud container images delete "gcr.io/${PROJECT_ID}/${env.SERVICE}@{}" --force-delete-tags --quiet || true
+
