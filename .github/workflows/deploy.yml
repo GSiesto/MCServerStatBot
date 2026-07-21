@@ -33,13 +33,34 @@ jobs:
 
       - name: Deploy to Cloud Run
         id: deploy
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
+          AFFILIATE_URL: ${{ secrets.AFFILIATE_URL }}
+          AFFILIATE_LABEL: ${{ secrets.AFFILIATE_LABEL }}
+          AFFILIATE_BLURB: ${{ secrets.AFFILIATE_BLURB }}
+          LOG_LEVEL: ${{ secrets.LOG_LEVEL }}
         run: |
+          ENV_VARS="TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN},WEBHOOK_SECRET=${WEBHOOK_SECRET}"
+          if [ -n "$AFFILIATE_URL" ]; then
+            ENV_VARS="${ENV_VARS},AFFILIATE_URL=${AFFILIATE_URL}"
+          fi
+          if [ -n "$AFFILIATE_LABEL" ]; then
+            ENV_VARS="${ENV_VARS},AFFILIATE_LABEL=${AFFILIATE_LABEL}"
+          fi
+          if [ -n "$AFFILIATE_BLURB" ]; then
+            ENV_VARS="${ENV_VARS},AFFILIATE_BLURB=${AFFILIATE_BLURB}"
+          fi
+          if [ -n "$LOG_LEVEL" ]; then
+            ENV_VARS="${ENV_VARS},LOG_LEVEL=${LOG_LEVEL}"
+          fi
+
           gcloud run deploy ${{ env.SERVICE }} \
             --source . \
             --region ${{ env.REGION }} \
             --allow-unauthenticated \
-            --set-env-vars "TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}" \
-            --set-env-vars "WEBHOOK_SECRET=${{ secrets.WEBHOOK_SECRET }}"
+            --set-env-vars "${ENV_VARS}"
+
 
       - name: Configure Webhook URL
         run: |
