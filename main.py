@@ -95,19 +95,28 @@ def main() -> None:
     application.add_error_handler(log_error)
 
     webhook_url = os.getenv("WEBHOOK_URL")
+    is_cloud_run = bool(os.getenv("K_SERVICE"))
 
-    if webhook_url:
+    if webhook_url or is_cloud_run:
         # Webhook mode — for Cloud Run and other serverless platforms.
         # The container receives HTTP POSTs from Telegram and scales to zero when idle.
         port = int(os.getenv("PORT", "8080"))
         secret_token = os.getenv("WEBHOOK_SECRET", "")
 
-        logging.info("Starting in webhook mode on port %d", port)
+        # Telegram API strictly requires an HTTPS URL when registering webhooks.
+        # If running locally or on initial Cloud Run boot before WEBHOOK_URL is assigned,
+        # fallback to a dummy HTTPS URL so Telegram API call succeeds while binding 0.0.0.0:PORT locally.
+        if webhook_url and webhook_url.startswith("https://"):
+            effective_webhook_url = f"{webhook_url.rstrip('/')}/webhook"
+        else:
+            effective_webhook_url = "https://example.com/webhook"
+
+        logging.info("Starting HTTP server on port %d (Webhook URL: %s)", port, effective_webhook_url)
         application.run_webhook(
             listen="0.0.0.0",
             port=port,
             url_path="webhook",
-            webhook_url=f"{webhook_url.rstrip('/')}/webhook",
+            webhook_url=effective_webhook_url,
             secret_token=secret_token or None,
         )
     else:
