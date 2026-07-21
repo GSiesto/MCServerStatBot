@@ -26,3 +26,14 @@ def is_valid_server_address(address: str | None) -> bool:
         return False
 
     return bool(_SERVER_ADDRESS_PATTERN.match(address))
+
+
+def parse_address(address: str) -> tuple[str, int]:
+    """Parse a server address into (host, port), defaulting port to 25565 if unspecified."""
+    if ":" in address:
+        host, _, port_str = address.rpartition(":")
+        try:
+            return host, int(port_str)
+        except ValueError:
+            pass
+    return address, 25565
