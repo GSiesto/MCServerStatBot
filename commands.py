@@ -867,8 +867,8 @@ async def error_url(context: ContextTypes.DEFAULT_TYPE, chat_id: int, address: s
             "⚠️ *INVALID SERVER ADDRESS*\n"
             f"`{safe_address}`\n\n"
             "Please provide a hostname or IP like:\n"
-            "• `play.hypixel.net`\n"
-            "• `juega.orizon.gg`\n"
+            "• `mc.example.com`\n"
+            "• `play.example.com`\n"
             "• `mc.example.com:25565`"
         ),
         reply_markup=build_main_keyboard(),
@@ -885,8 +885,8 @@ async def error_incomplete(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> 
         text=_message_with_affiliate_hint(
             "ℹ️ *SERVER ADDRESS REQUIRED*\n\n"
             "Use the command with a server address:\n"
-            "• `/status juega.orizon.gg`\n"
-            "• `/players play.hypixel.net`"
+            "• `/status mc.example.com`\n"
+            "• `/players play.example.com`"
         ),
         reply_markup=build_main_keyboard(),
     )
