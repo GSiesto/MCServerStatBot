@@ -154,6 +154,20 @@ The bot supports **webhook mode** out of the box, which lets Cloud Run scale to 
 
 > **Polling vs. Webhook mode:** When `WEBHOOK_URL` is set, the bot runs in webhook mode (ideal for serverless). When it is omitted, the bot falls back to long polling (ideal for local development or always-on VMs).
 
+### Automated CI/CD with GitHub Actions
+
+The repository includes a automated deployment workflow (`.github/workflows/deploy.yml`) that builds and deploys your bot to Google Cloud Run automatically whenever you push to `master`.
+
+To set up automatic deployments:
+1. Go to your GitHub Repository -> **Settings** -> **Secrets and variables** -> **Actions**.
+2. Add the following **Repository Secrets**:
+   * `GCP_SA_KEY`: Your GCP Service Account JSON key (with Cloud Run Admin & Service Account User roles).
+   * `TELEGRAM_BOT_TOKEN`: Your Telegram Bot Token from `@BotFather`.
+   * `WEBHOOK_SECRET`: A secret string used to validate incoming webhooks from Telegram.
+
+Whenever code is merged to `master`, GitHub Actions will build the container, deploy to Cloud Run, and set up the webhook automatically!
+
+
 ## 🛠️ Ideas for running 24/7 on a Raspberry Pi
 
 - Use `tmux` or `screen` to keep the bot alive after closing SSH.
