@@ -125,6 +125,35 @@ MCServerStatBot is a modern asyncio-based Telegram bot that checks the status of
 
 - The public bot may show a support/affiliate button, but self-hosted copies ship with monetization disabled. If you want to enable the feature, check [`MONETIZATION.md`](./MONETIZATION.md) for full details.
 
+## Deploying to Google Cloud Run (free tier)
+
+The bot supports **webhook mode** out of the box, which lets Cloud Run scale to zero when idle and stay within the free tier.
+
+1. **Install the [gcloud CLI](https://cloud.google.com/sdk/docs/install)** and authenticate:
+   ```bash
+   gcloud auth login
+   gcloud config set project YOUR_PROJECT_ID
+   ```
+
+2. **Deploy to Cloud Run:**
+   ```bash
+   gcloud run deploy mcserverstatbot \
+     --source . \
+     --region us-central1 \
+     --allow-unauthenticated \
+     --set-env-vars TELEGRAM_BOT_TOKEN=YOUR_TOKEN \
+     --set-env-vars WEBHOOK_SECRET=YOUR_RANDOM_SECRET
+   ```
+
+3. **Set the webhook URL** — Cloud Run prints the service URL after deploy (e.g. `https://mcserverstatbot-abc123.run.app`). Update the service with it:
+   ```bash
+   gcloud run services update mcserverstatbot \
+     --region us-central1 \
+     --update-env-vars WEBHOOK_URL=https://mcserverstatbot-abc123.run.app
+   ```
+
+> **Polling vs. Webhook mode:** When `WEBHOOK_URL` is set, the bot runs in webhook mode (ideal for serverless). When it is omitted, the bot falls back to long polling (ideal for local development or always-on VMs).
+
 ## 🛠️ Ideas for running 24/7 on a Raspberry Pi
 
 - Use `tmux` or `screen` to keep the bot alive after closing SSH.

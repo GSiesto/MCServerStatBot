@@ -27,5 +27,9 @@ RUN chown -R appuser:appgroup /app
 # Switch to non-root user
 USER appuser
 
+# Cloud Run injects the PORT env var; default to 8080 for local builds
+ENV PORT=8080
+EXPOSE ${PORT}
+
 # Default command to run the Telegram bot
 CMD ["python", "main.py"]

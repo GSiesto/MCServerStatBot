@@ -94,7 +94,26 @@ def main() -> None:
 
     application.add_error_handler(log_error)
 
-    application.run_polling()
+    webhook_url = os.getenv("WEBHOOK_URL")
+
+    if webhook_url:
+        # Webhook mode — for Cloud Run and other serverless platforms.
+        # The container receives HTTP POSTs from Telegram and scales to zero when idle.
+        port = int(os.getenv("PORT", "8080"))
+        secret_token = os.getenv("WEBHOOK_SECRET", "")
+
+        logging.info("Starting in webhook mode on port %d", port)
+        application.run_webhook(
+            listen="0.0.0.0",
+            port=port,
+            url_path="webhook",
+            webhook_url=f"{webhook_url.rstrip('/')}/webhook",
+            secret_token=secret_token or None,
+        )
+    else:
+        # Polling mode — for local development and always-on VMs.
+        logging.info("Starting in polling mode")
+        application.run_polling()
 
 
 async def log_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
